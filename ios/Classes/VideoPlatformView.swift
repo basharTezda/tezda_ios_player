@@ -114,10 +114,10 @@ class VideoPlayerUIView: UIView {
         //     SwiftNativeVideoPlayerPlugin.eventSink?(["buffering": true])
         // case "playbackLikelyToKeepUp":
         //     SwiftNativeVideoPlayerPlugin.eventSink?(["buffering": false])
-        case "presentationSize":
-            let size = item.presentationSize
-            let isLandscape = size.width > size.height
-            playerLayer.videoGravity = isLandscape ? .resizeAspect : .resizeAspectFill
+        // case "presentationSize":
+        //     let size = item.presentationSize
+        //     let isLandscape = size.width > size.height
+        //     playerLayer.videoGravity = isLandscape ? .resizeAspect : .resizeAspectFill
         default:
             break
         }

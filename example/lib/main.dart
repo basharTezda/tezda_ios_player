@@ -56,6 +56,7 @@ class VideoExampleScreen extends StatelessWidget {
               ),
             ],
           );
+      
         },
       ),
     );
