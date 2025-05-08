@@ -49,3 +49,33 @@ class VideoExampleScreen extends StatelessWidget {
     );
   }
 }
+
+String extractIdFromUrl(String videoUrl) {
+  // Extract the video ID using regular expression
+  final RegExp regExp = RegExp(r"\/video\/([a-f0-9]+)\.mp4");
+  final match = regExp.firstMatch(videoUrl);
+
+  // Return the extracted ID
+  if (match != null && match.groupCount > 0) {
+    return match.group(1)!;
+  }
+
+  return ""; // Return an empty string if no match is found
+}
+
+String generateThumbnailUrl(String videoUrl) {
+  String videoId = extractIdFromUrl(videoUrl);
+  if (videoId.isNotEmpty) {
+    // Construct the new thumbnail URL
+    return "https://media.tezda.com/thumbnail/$videoId.jpg";
+  }
+  return ""; // Return an empty string if no ID was extracted
+}
+
+void preloadImage(String imageUrl, BuildContext context) {
+  // Create an ImageProvider
+  final imageProvider = NetworkImage(imageUrl);
+
+  // Preload the image into the cache
+  precacheImage(imageProvider, context);
+}

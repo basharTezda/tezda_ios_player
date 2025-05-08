@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import CachingPlayerItem
 
 class VideoPlatformView: NSObject, FlutterPlatformView, UICollectionViewDataSource,
     UICollectionViewDelegateFlowLayout
@@ -95,3 +96,5 @@ class VideoPlatformView: NSObject, FlutterPlatformView, UICollectionViewDataSour
     //     }
     // }
 }
+
+
