@@ -1,27 +1,46 @@
-import AVFoundation
+import Flutter
 import UIKit
+import CachingPlayerItem
+import AVFoundation
+
+
 
 class VideoPlayerUIView: UIView {
     private var player: AVPlayer!
     private var playerLayer: AVPlayerLayer!
-    private var isPlaying = false
+    private var timeObserverToken: Any?
 
-    init(frame: CGRect, videoURL: URL) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool,isLandScape: Bool ) {
         super.init(frame: frame)
         backgroundColor = .black
+        
+        let playerItem = CachingPlayerItem(url: videoURL)
+        
+        // Initialize AVPlayer with the player item
+        player = AVPlayer(playerItem: playerItem)
+        player.isMuted = isMuted
+        player.automaticallyWaitsToMinimizeStalling = false
+   
 
-        player = AVPlayer(url: videoURL)
-        player.isMuted = false
+        // playerItem.download()
 
+
+        // Set up player layer to display the video
         playerLayer = AVPlayerLayer(player: player)
         playerLayer.frame = bounds
-        playerLayer.videoGravity = .resizeAspect
-
+         player.play()
+//        player = AVPlayer(url: videoURL)
+  
+        
+//        playerLayer = AVPlayerLayer(player: player)
+//        playerLayer.frame = bounds
+        playerLayer.videoGravity = isLandScape ? .resizeAspect : .resizeAspectFill
         layer.addSublayer(playerLayer)
 
         // Autoplay
         if let item = player.currentItem {
             item.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
+            item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: nil)
         }
         player.currentItem?.addObserver(
             self, forKeyPath: "playbackBufferEmpty", options: [.new], context: nil)
@@ -29,6 +48,7 @@ class VideoPlayerUIView: UIView {
             self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
         player.currentItem?.addObserver(
             self, forKeyPath: "presentationSize", options: [.new], context: nil)
+        addPeriodicTimeObserver()
 
         // Looping
         NotificationCenter.default.addObserver(
@@ -42,9 +62,31 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
-        adjustVideoGravityForOrientation()
-    }
+        
+       
+   
+             
 
+    }
+    private func addPeriodicTimeObserver() {
+        // Add periodic time observer for updating video duration and current time
+        let interval = CMTime(seconds: 1, preferredTimescale: 1)
+        
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: DispatchQueue.main) { [weak self] time in
+            self?.sendVideoDuration(currentTime: time.seconds, duration: self?.player.currentItem?.duration.seconds ?? 0)
+        }
+    }
+    
+    @objc private func sendVideoDuration(currentTime: Double, duration: Double) {
+         // Prepare the event data and send it to Flutter
+         let eventData: [String: Any] = [
+             "currentTime": currentTime,
+             "duration": duration
+         ]
+        NotificationCenter.default.addObserver(self, selector: #selector(handleSeekToNotification(_:)), name: Notification.Name("SeekToTimeNotification"), object: nil)
+
+         NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
+     }
     @objc private func loopVideo() {
         player.seek(to: .zero)
         player.play()
@@ -54,12 +96,8 @@ class VideoPlayerUIView: UIView {
         DispatchQueue.main.async {
             if self.player.timeControlStatus == .playing {
                 self.player.pause()
-                self.isPlaying = false
-
             } else {
                 self.player.play()
-                self.isPlaying = true
-
             }
         }
     }
@@ -87,8 +125,24 @@ class VideoPlayerUIView: UIView {
         switch keyPath {
         case "status":
             if item.status == .readyToPlay {
-                checkVisibilityAndUpdatePlayPause() 
-                // player.play()
+//                player.play()
+                let eventData: [String: Any] = [
+                    "started": true,
+                    
+                ]
+                NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
+
+            }
+        case "loadedTimeRanges":
+            if let currentItem = player.currentItem {
+                let bufferedTime = currentItem.loadedTimeRanges.first?.timeRangeValue.duration.seconds ?? 0
+                let eventData: [String: Any] = [
+                    "buffering": bufferedTime,
+                    
+                ]
+                NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            
+
             }
         // case "playbackBufferEmpty":
         //     SwiftNativeVideoPlayerPlugin.eventSink?(["buffering": true])
@@ -110,8 +164,29 @@ class VideoPlayerUIView: UIView {
         if let item = player.currentItem {
             item.removeObserver(self, forKeyPath: "status")
         }
-    }
+        removePeriodicTimeObserver()
+        NotificationCenter.default.removeObserver(self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
+    }
+    private func removePeriodicTimeObserver() {
+        if let token = timeObserverToken {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+    }
+    @objc private func handleSeekToNotification(_ notification: Notification) {
+        if let time = notification.object as? Double {
+            // Perform seek operation on the AVPlayer
+            let seekTime = CMTime(seconds: time, preferredTimescale: 600)
+            player.seek(to: seekTime) { completed in
+                if completed {
+                    print("Seek to \(time) seconds successful.")
+                } else {
+                    print("Seek operation failed.")
+                }
+            }
+        }
+    }
     private func checkVisibilityAndUpdatePlayPause() {
         guard let window = self.window else { return }
         let viewFrame = self.convert(self.bounds, to: window)
@@ -126,66 +201,36 @@ class VideoPlayerUIView: UIView {
         // If less than 100% visible → pause, else play
         if visibilityRatio < 0.99 {
             player.pause()
+       
         } else {
             player.play()
         }
+
     }
 
-    private func adjustVideoGravityForOrientation() {
-        guard let item = player.currentItem else { return }
+    // UICollectionView DataSource
 
-        let size = item.presentationSize
-        if size.height > size.width {
-            // Portrait video
-            playerLayer.videoGravity = .resizeAspectFill
-        } else {
-            // Landscape video
-            playerLayer.videoGravity = .resizeAspect
-        }
-    }
-    @objc private func handleTap() {
-        // Toggle play/pause state on tap
-        if isPlaying {
-            player.pause()
-        } else {
-            player.play()
-        }
-        // Toggle the state
-        isPlaying.toggle()
-    }
+    // UICollectionView DelegateFlowLayout to define size of each cell
+
+
+    // Play video when it comes into view
+
+
+    //     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    //     for (index, playerView) in playerViews.enumerated() {
+    //         let cellRect = collectionView.layoutAttributesForItem(at: IndexPath(row: index, section: 0))?.frame ?? .zero
+    //         let intersection = cellRect.intersection(scrollView.bounds)
+    //         let visibilityRatio = intersection.width * intersection.height / cellRect.width / cellRect.height
+
+    //         // If less than 100% visible, pause the video
+    //         if visibilityRatio < 0.99 {
+    //             playerView.pause()
+    //         } else {
+    //             // Otherwise, play the video
+    //             playerView.play()
+    //         }
+    //     }
+    // }
 }
 
-extension VideoPlayerUIView {
-    func changeVideo(to url: URL) {
-        player.pause()  // Pause current video
 
-        // Remove current player layer
-        playerLayer.removeFromSuperlayer()
-
-        // Create a new player for the new URL
-        player = AVPlayer(url: url)
-        player.isMuted = false
-
-        // Set up the new player layer
-        playerLayer = AVPlayerLayer(player: player)
-        playerLayer.frame = bounds
-        playerLayer.videoGravity = .resizeAspect
-        layer.addSublayer(playerLayer)
-
-        // Start playing the new video
-        // player.play()
-    }
-
-    func play() {
-        player.play()
-    }
-    func pause() {
-        player.pause()
-    }
-    func mute() {
-        player.isMuted = true
-    }
-    func unmute() {
-        player.isMuted = false
-    }
-}

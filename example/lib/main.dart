@@ -1,3 +1,6 @@
+import 'dart:developer';
+import 'dart:ffi';
+
 import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 
@@ -18,33 +21,107 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class VideoExampleScreen extends StatelessWidget {
-  VideoExampleScreen({super.key});
+class VideoExampleScreen extends StatefulWidget {
+  const VideoExampleScreen({super.key});
+
+  @override
+  State<VideoExampleScreen> createState() => _VideoExampleScreenState();
+}
+
+class _VideoExampleScreenState extends State<VideoExampleScreen> {
   final controller = NativeVideoController();
+
+  @override
+  void initState() {
+    NativeVideoController.onUpdate.listen((event) => setState(() {}));
+    super.initState();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          NativeVideoWidget(controller: controller, urls: videos),
+      body: PageView.builder(
+        onPageChanged: (value) {
+           NativeVideoController.reset();
+           setState(() {
+             
+           });
+        },
+        scrollDirection: Axis.vertical,
+        itemCount: videos.length,
+        itemBuilder: (context, index) {
+          preloadImage(
+            generateThumbnailUrl(videos.reversed.toList()[index + 1]),
+            context,
+          );
+          final videoUrl = videos.reversed.toList()[index];
+          return Stack(
+            children: [
+              NativeVideoWidget(
+                url: videoUrl,
+                controller: controller,
+                shouldMute: true,
+                isLandscape: false,
+              ),
+              if(!NativeVideoController.isPlaying)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Image.network(
+                    generateThumbnailUrl(videoUrl),
+                    fit: BoxFit.cover,
+                    width: MediaQuery.of(context).size.width,
+                    height: MediaQuery.of(context).size.height,
+                  ),
+                ),
 
-          // Positioned.fill(
-          //   child: GestureDetector(
-          //     onTap: () async => await controller.togglePlayPause(),
-          //     behavior: HitTestBehavior.translucent, // 👈 VERY important!
-          //     child: const SizedBox(), // transparent layer
-          //   ),
-          // ),
-          // Positioned(
-          //   right: 20,
-          //   bottom: 100,
-          //   child: IconButton(
-          //     icon: const Icon(Icons.volume_up, color: Colors.white),
-          //     onPressed: () => controller.toggleMute(),
-          //   ),
-          // ),
-        ],
+              Positioned.fill(
+                child: GestureDetector(
+                  onTap: () async => await controller.togglePlayPause(),
+                  onDoubleTap: () async => await controller.seekTo(132.202),
+                  behavior: HitTestBehavior.translucent, // 👈 VERY important!
+                  child: const SizedBox(), // transparent layer
+                ),
+              ),
+              Positioned(
+                right: 20,
+                bottom: 100,
+                child: IconButton(
+                  icon: const Icon(Icons.volume_up, color: Colors.white),
+                  onPressed: () => controller.toggleMute(),
+                ),
+              ),
+              //  if (NativeVideoController.duration.inSeconds != 0)
+              Positioned(
+                right: 20,
+                bottom: 50,
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width,
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value:
+                            NativeVideoController.buffured.inMicroseconds /
+                            NativeVideoController.duration.inMicroseconds,
+                        backgroundColor: Colors.yellow,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        value:
+                            NativeVideoController.currentTime.inMicroseconds /
+                            NativeVideoController.duration.inMicroseconds,
+                        backgroundColor: Colors.white,
+                        color: Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

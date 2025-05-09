@@ -6,14 +6,15 @@ export 'package:tezda_ios_player/tezda_ios_player.dart';
 export 'package:tezda_ios_player/controller.dart';
 
 class NativeVideoWidget extends StatelessWidget {
-  final List<String> urls;  // Accept a list of URLs
+  final 
+  String url;  // Accept a list of URLs
   final NativeVideoController controller;
   final bool shouldMute;
   final bool isLandscape;
 
   const NativeVideoWidget({
     super.key,
-    required this.urls,
+    required this.url,
     required this.controller,
     required this.shouldMute,
     required this.isLandscape,
@@ -22,10 +23,14 @@ class NativeVideoWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return UiKitView(
-      viewType: 'native_video_player',
-      creationParams: {'urls': urls},  // Pass the list of URLs
-      creationParamsCodec: const StandardMessageCodec(),
+    return Stack(
+      children: [
+        UiKitView(
+          viewType: 'native_video_player',
+          creationParams: {'url': url, 'shouldMute': shouldMute, 'isLandscape': isLandscape},
+          creationParamsCodec: const StandardMessageCodec(),
+        ),
+      ],
     );
   }
 }

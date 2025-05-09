@@ -1,19 +1,24 @@
 import Flutter
 import UIKit
-import CachingPlayerItem
 
 public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     public var eventSink: FlutterEventSink?
     private var notificationObserver: NSObjectProtocol?
 
-public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin {
-    
     public static func register(with registrar: FlutterPluginRegistrar) {
         let factory = VideoViewFactory(messenger: registrar.messenger())
         registrar.register(factory, withId: "native_video_player")
-
-        let channel = FlutterMethodChannel(
-            name: "native_video_player_channel", binaryMessenger: registrar.messenger())
+        
+        let channel = FlutterMethodChannel(name: "native_video_player_channel", binaryMessenger: registrar.messenger())
+        let eventChannel = FlutterEventChannel(name: "native_video_player_event", binaryMessenger: registrar.messenger())
+        let instance = TezdaIosPlayerPlugin()
+        eventChannel.setStreamHandler(instance)
+        
+        // Register observer for video duration updates
+        instance.notificationObserver = NotificationCenter.default.addObserver(forName: Notification.Name("VideoDurationUpdate"), object: nil, queue: .main) { notification in
+            instance.handleVideoDurationUpdate(notification)
+        }
+        
         channel.setMethodCallHandler { call, result in
             switch call.method {
             case "togglePlay":
@@ -56,9 +61,9 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin {
         // Clear eventSink when the stream is canceled
         self.eventSink = nil
         // Remove the NotificationCenter observer
-//        if let observer = notificationObserver {
-//            NotificationCenter.default.removeObserver(observer)
-//        }
+        // if let observer = notificationObserver {
+        //     NotificationCenter.default.removeObserver(observer)
+        // }
         return nil
     }
 
