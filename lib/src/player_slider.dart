@@ -20,6 +20,7 @@ class __NativeVideoSliderStateState extends State<NativeVideoSlider> {
   @override
   Widget build(BuildContext context) {
     return Slider(
+      padding: EdgeInsets.all(0),
       activeColor: Color.fromRGBO(255, 255, 255, 1),
       inactiveColor: Colors.transparent,
       secondaryTrackValue:
