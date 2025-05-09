@@ -1,14 +1,20 @@
 PODS:
+  - CachingPlayerItem (2.0.2)
   - Flutter (1.0.0)
   - integration_test (0.0.1):
     - Flutter
   - tezda_ios_player (0.0.1):
+    - CachingPlayerItem
     - Flutter
 
 DEPENDENCIES:
   - Flutter (from `Flutter`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
   - tezda_ios_player (from `.symlinks/plugins/tezda_ios_player/ios`)
+
+SPEC REPOS:
+  trunk:
+    - CachingPlayerItem
 
 EXTERNAL SOURCES:
   Flutter:
@@ -19,9 +25,10 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/tezda_ios_player/ios"
 
 SPEC CHECKSUMS:
+  CachingPlayerItem: 553f4dea8a3edd454195382ad534032da884f10c
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  tezda_ios_player: 484460e9d30d2ed1266264767ca6535e7d8ae1dd
+  tezda_ios_player: b163924b94fc13a5ddc493a5a66b88531583d4b0
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 

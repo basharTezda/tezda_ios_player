@@ -1,8 +1,8 @@
 
 
  final List<String> videos = [
-    "https://media.tezda.com/video/6797b80504f55cf2dc8ff596.mp4",
-    "https://media.tezda.com/video/681724ef56f0f9db3445e84b.mp4",
+    // "https://media.tezda.com/video/6797b80504f55cf2dc8ff596.mp4",
+    // "https://media.tezda.com/video/681724ef56f0f9db3445e84b.mp4",
     'https://media.tezda.com/video/679007702317434d5fff75b3.mp4',
     'https://media.tezda.com/video/679009b72317434d5fff7609.mp4',
     'https://media.tezda.com/video/679009d22317434d5fff760d.mp4',

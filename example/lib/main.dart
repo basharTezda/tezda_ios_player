@@ -1,7 +1,7 @@
 import 'dart:developer';
+import 'dart:ffi';
 
 import 'package:flutter/material.dart';
-import 'package:tezda_ios_player/controller.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 
 import 'const.dart';
@@ -21,27 +21,65 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class VideoExampleScreen extends StatelessWidget {
+class VideoExampleScreen extends StatefulWidget {
   const VideoExampleScreen({super.key});
+
+  @override
+  State<VideoExampleScreen> createState() => _VideoExampleScreenState();
+}
+
+class _VideoExampleScreenState extends State<VideoExampleScreen> {
+  final controller = NativeVideoController();
+
+  @override
+  void initState() {
+    NativeVideoController.onUpdate.listen((event) => setState(() {}));
+    super.initState();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: PageView.builder(
+        onPageChanged: (value) {
+           NativeVideoController.reset();
+           setState(() {
+             
+           });
+        },
         scrollDirection: Axis.vertical,
         itemCount: videos.length,
         itemBuilder: (context, index) {
-          final controller = NativeVideoController();
+          preloadImage(
+            generateThumbnailUrl(videos.reversed.toList()[index + 1]),
+            context,
+          );
+          final videoUrl = videos.reversed.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
-                url: videos[index].toString(),
+                url: videoUrl,
                 controller: controller,
+                shouldMute: true,
+                isLandscape: false,
               ),
+              if(!NativeVideoController.isPlaying)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Image.network(
+                    generateThumbnailUrl(videoUrl),
+                    fit: BoxFit.cover,
+                    width: MediaQuery.of(context).size.width,
+                    height: MediaQuery.of(context).size.height,
+                  ),
+                ),
 
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () async => await controller.togglePlayPause(),
+                  onDoubleTap: () async => await controller.seekTo(132.202),
                   behavior: HitTestBehavior.translucent, // 👈 VERY important!
                   child: const SizedBox(), // transparent layer
                 ),
@@ -54,11 +92,67 @@ class VideoExampleScreen extends StatelessWidget {
                   onPressed: () => controller.toggleMute(),
                 ),
               ),
+              //  if (NativeVideoController.duration.inSeconds != 0)
+              Positioned(
+                right: 20,
+                bottom: 50,
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width,
+                  child: Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value:
+                            NativeVideoController.buffured.inMicroseconds /
+                            NativeVideoController.duration.inMicroseconds,
+                        backgroundColor: Colors.yellow,
+                        color: Colors.grey,
+                      ),
+                      const SizedBox(height: 10),
+                      LinearProgressIndicator(
+                        value:
+                            NativeVideoController.currentTime.inMicroseconds /
+                            NativeVideoController.duration.inMicroseconds,
+                        backgroundColor: Colors.white,
+                        color: Colors.red,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ],
           );
-      
         },
       ),
     );
   }
+}
+
+String extractIdFromUrl(String videoUrl) {
+  // Extract the video ID using regular expression
+  final RegExp regExp = RegExp(r"\/video\/([a-f0-9]+)\.mp4");
+  final match = regExp.firstMatch(videoUrl);
+
+  // Return the extracted ID
+  if (match != null && match.groupCount > 0) {
+    return match.group(1)!;
+  }
+
+  return ""; // Return an empty string if no match is found
+}
+
+String generateThumbnailUrl(String videoUrl) {
+  String videoId = extractIdFromUrl(videoUrl);
+  if (videoId.isNotEmpty) {
+    // Construct the new thumbnail URL
+    return "https://media.tezda.com/thumbnail/$videoId.jpg";
+  }
+  return ""; // Return an empty string if no ID was extracted
+}
+
+void preloadImage(String imageUrl, BuildContext context) {
+  // Create an ImageProvider
+  final imageProvider = NetworkImage(imageUrl);
+
+  // Preload the image into the cache
+  precacheImage(imageProvider, context);
 }
