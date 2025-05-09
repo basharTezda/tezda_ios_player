@@ -33,7 +33,6 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
 
   @override
   void initState() {
-    NativeVideoController.onUpdate.listen((event) => setState(() {}));
     super.initState();
   }
 
@@ -42,10 +41,8 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
     return Scaffold(
       body: PageView.builder(
         onPageChanged: (value) {
-           NativeVideoController.reset();
-           setState(() {
-             
-           });
+          NativeVideoController.reset();
+          setState(() {});
         },
         scrollDirection: Axis.vertical,
         itemCount: videos.length,
@@ -59,27 +56,20 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
             children: [
               NativeVideoWidget(
                 url: videoUrl,
-                controller: controller,
                 shouldMute: true,
                 isLandscape: false,
-              ),
-              if(!NativeVideoController.isPlaying)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Image.network(
+                placeholder: Image.network(
                     generateThumbnailUrl(videoUrl),
                     fit: BoxFit.cover,
                     width: MediaQuery.of(context).size.width,
                     height: MediaQuery.of(context).size.height,
                   ),
-                ),
+              ),
+             
 
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () async => await controller.togglePlayPause(),
-                  onDoubleTap: () async => await controller.seekTo(132.202),
                   behavior: HitTestBehavior.translucent, // 👈 VERY important!
                   child: const SizedBox(), // transparent layer
                 ),
@@ -94,29 +84,10 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
               ),
               //  if (NativeVideoController.duration.inSeconds != 0)
               Positioned(
-                right: 20,
                 bottom: 50,
                 child: SizedBox(
                   width: MediaQuery.of(context).size.width,
-                  child: Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value:
-                            NativeVideoController.buffured.inMicroseconds /
-                            NativeVideoController.duration.inMicroseconds,
-                        backgroundColor: Colors.yellow,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(height: 10),
-                      LinearProgressIndicator(
-                        value:
-                            NativeVideoController.currentTime.inMicroseconds /
-                            NativeVideoController.duration.inMicroseconds,
-                        backgroundColor: Colors.white,
-                        color: Colors.red,
-                      ),
-                    ],
-                  ),
+                  child: NativeVideoSlider(),
                 ),
               ),
             ],
