@@ -36,32 +36,32 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   bool shouldPlayVideo = false;
   @override
   Widget build(BuildContext context) => Stack(
-    children: [
-      VisibilityDetector(
-        key: Key(widget.url),
-        onVisibilityChanged: (info) {
-          if (info.visibleFraction < .1) {
-            shouldPlayVideo = false;
-          }
-          if (info.visibleFraction > .9) {
-            shouldPlayVideo = true;
-          }
-          mounted ? setState(() {}) : null;
-        },
-        child:
-            shouldPlayVideo
+        children: [
+          VisibilityDetector(
+            key: Key(widget.url),
+            onVisibilityChanged: (info) {
+              if (info.visibleFraction < .1) {
+                shouldPlayVideo = false;
+              }
+              if (info.visibleFraction > .9) {
+                shouldPlayVideo = true;
+              }
+              mounted ? setState(() {}) : null;
+            },
+            child: shouldPlayVideo
                 ? UiKitView(
-                  viewType: 'native_video_player',
-                  creationParams: {
-                    'url': widget.url,
-                    'shouldMute': widget.shouldMute,
-                    'isLandscape': widget.isLandscape,
-                  },
-                  creationParamsCodec: const StandardMessageCodec(),
-                )
+                    viewType: 'native_video_player',
+                    creationParams: {
+                      'url': widget.url,
+                      'shouldMute': widget.shouldMute,
+                      'isLandscape': widget.isLandscape,
+                    },
+                    creationParamsCodec: const StandardMessageCodec(),
+                  )
                 : widget.placeholder ?? const SizedBox(),
-      ),
-      if (!NativeVideoController.isPlaying) widget.placeholder ?? const SizedBox(),
-    ],
-  );
+          ),
+          if (!NativeVideoController.isPlaying)
+            Positioned.fill(child: widget.placeholder ?? const SizedBox()),
+        ],
+      );
 }

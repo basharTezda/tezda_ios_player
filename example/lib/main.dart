@@ -1,9 +1,5 @@
-import 'dart:developer';
-import 'dart:ffi';
-
 import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
-
 import 'const.dart';
 
 void main() {
@@ -114,7 +110,7 @@ String extractIdFromUrl(String videoUrl) {
 String generateThumbnailUrl(String videoUrl) {
   String videoId = extractIdFromUrl(videoUrl);
   if (videoId.isNotEmpty) {
-    // Construct the new thumbnail URL
+
     return "https://media.tezda.com/thumbnail/$videoId.jpg";
   }
   return ""; // Return an empty string if no ID was extracted
