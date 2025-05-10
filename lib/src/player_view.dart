@@ -11,6 +11,7 @@ class NativeVideoWidget extends StatefulWidget {
   final bool shouldMute;
   final bool isLandscape;
   final Widget? placeholder;
+  final String? preloadUrl;
 
   const NativeVideoWidget({
     super.key,
@@ -18,6 +19,7 @@ class NativeVideoWidget extends StatefulWidget {
     required this.shouldMute,
     required this.isLandscape,
     this.placeholder,
+    this.preloadUrl,
   });
 
   @override
@@ -55,6 +57,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                       'url': widget.url,
                       'shouldMute': widget.shouldMute,
                       'isLandscape': widget.isLandscape,
+                      "preLoadUrl": widget.preloadUrl ?? widget.url,
                     },
                     creationParamsCodec: const StandardMessageCodec(),
                   )

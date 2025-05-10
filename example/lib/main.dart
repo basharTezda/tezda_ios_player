@@ -44,27 +44,24 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
         scrollDirection: Axis.vertical,
         itemCount: videos.length,
         itemBuilder: (context, index) {
-       
-          final randomIndex =true?index: Random().nextInt(videos.length);
-             preloadImage(
-            generateThumbnailUrl(videos.reversed.toList()[randomIndex]),
-            context,
-          );
+          final randomIndex = true ? index : Random().nextInt(videos.length);
+          final nextVideo = videos[randomIndex + 1];
+          preloadImage(generateThumbnailUrl(nextVideo), context);
           final videoUrl = videos.reversed.toList()[randomIndex];
           return Stack(
             children: [
               NativeVideoWidget(
                 url: videoUrl,
+                preloadUrl: nextVideo,
                 shouldMute: true,
                 isLandscape: false,
                 placeholder: Image.network(
-                    generateThumbnailUrl(videoUrl),
-                    fit: BoxFit.cover,
-                    width: MediaQuery.of(context).size.width,
-                    height: MediaQuery.of(context).size.height,
-                  ),
+                  generateThumbnailUrl(videoUrl),
+                  fit: BoxFit.cover,
+                  width: MediaQuery.of(context).size.width,
+                  height: MediaQuery.of(context).size.height,
+                ),
               ),
-             
 
               Positioned.fill(
                 child: GestureDetector(
@@ -113,7 +110,6 @@ String extractIdFromUrl(String videoUrl) {
 String generateThumbnailUrl(String videoUrl) {
   String videoId = extractIdFromUrl(videoUrl);
   if (videoId.isNotEmpty) {
-
     return "https://media.tezda.com/thumbnail/$videoId.jpg";
   }
   return ""; // Return an empty string if no ID was extracted
