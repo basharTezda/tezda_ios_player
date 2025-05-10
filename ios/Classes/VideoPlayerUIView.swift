@@ -1,7 +1,22 @@
 import AVFoundation
 import Cache
 import Flutter
+import SystemConfiguration
 import UIKit
+
+func isConnectedToNetwork() -> Bool {
+    let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
+    var flags = SCNetworkReachabilityFlags()
+
+    if SCNetworkReachabilityGetFlags(reachability!, &flags) == false {
+        return false
+    }
+
+    let isReachable = flags.contains(.reachable)
+    let needsConnection = flags.contains(.connectionRequired)
+
+    return isReachable && !needsConnection
+}
 
 let diskConfig = DiskConfig(name: "VideoCache")
 let memoryConfig = MemoryConfig(expiry: .never, countLimit: 10, totalCostLimit: 10)
@@ -14,7 +29,7 @@ class VideoPlayerUIView: UIView {
     private var timeObserverToken: Any?
     private var url: URL!
 
-    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideo: URL) {
         url = videoURL
         super.init(frame: frame)
         backgroundColor = .black
@@ -36,34 +51,52 @@ class VideoPlayerUIView: UIView {
         }
         let playerItem: AVPlayerItem
         if let cachedAsset = self.asset(for: videoURL) {
-            // if cached data found - just play it
             playerItem = AVPlayerItem(asset: cachedAsset)
+            initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
         } else {
-            // if no data found - stream it from network and save to cache when it's ready
+            if !isConnectedToNetwork() {
+                let eventData: [String: Any] = [
+                    "message": "No network connection and no cached video found."
+
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
+                initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+                return
+            }
+
             playerItem = CachingPlayerItem(url: videoURL)
             (playerItem as? CachingPlayerItem)?.delegate = self
+            initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
         }
-        // playerItem.delegate = self
+        if let cachedAsset = self.asset(for: nextVideo) {
+            let playerItem = AVPlayerItem(asset: cachedAsset)
+        } else {
+            if !isConnectedToNetwork() {
+                let eventData: [String: Any] = [
+                    "message": "No network connection and no cached video found."
 
-        // Initialize AVPlayer with the player item
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                return
+            }
+            let playerItem = CachingPlayerItem(url: nextVideo)
+            (playerItem as? CachingPlayerItem)?.delegate = self
+        }
+
+    }
+    private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
         player = AVPlayer(playerItem: playerItem)
         player.isMuted = isMuted
         player.automaticallyWaitsToMinimizeStalling = false
-
-        // playerItem.download()
-
-        // Set up player layer to display the video
         playerLayer = AVPlayerLayer(player: player)
         playerLayer.frame = bounds
         player.play()
-        //        player = AVPlayer(url: videoURL)
-
-        //        playerLayer = AVPlayerLayer(player: player)
-        //        playerLayer.frame = bounds
         playerLayer.videoGravity = isLandScape ? .resizeAspect : .resizeAspectFill
         layer.addSublayer(playerLayer)
 
-        // Autoplay
         if let item = player.currentItem {
             item.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
             item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: nil)
@@ -88,7 +121,6 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
-
     }
     private func addPeriodicTimeObserver() {
         // Add periodic time observer for updating video duration and current time
