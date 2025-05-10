@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 import 'const.dart';
@@ -43,11 +44,13 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
         scrollDirection: Axis.vertical,
         itemCount: videos.length,
         itemBuilder: (context, index) {
-          preloadImage(
-            generateThumbnailUrl(videos.reversed.toList()[index + 1]),
+       
+          final randomIndex =true?index: Random().nextInt(videos.length);
+             preloadImage(
+            generateThumbnailUrl(videos.reversed.toList()[randomIndex]),
             context,
           );
-          final videoUrl = videos.reversed.toList()[index];
+          final videoUrl = videos.reversed.toList()[randomIndex];
           return Stack(
             children: [
               NativeVideoWidget(

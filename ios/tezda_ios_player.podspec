@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'tezda_ios_player'
-  s.version          = '0.0.1'
+  s.version          = '0.0.3'
   s.summary          = 'A new Flutter plugin project.'
   s.description      = <<-DESC
 A new Flutter plugin project.
@@ -15,7 +15,7 @@ A new Flutter plugin project.
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'
-  s.dependency 'CachingPlayerItem'
+  s.dependency 'Cache'
   s.platform = :ios, '12.0'
 
   # Flutter.framework does not contain a i386 slice.
