@@ -1,39 +1,65 @@
+import AVFoundation
+import Cache
 import Flutter
 import UIKit
-import CachingPlayerItem
-import AVFoundation
 
-
+let diskConfig = DiskConfig(name: "VideoCache")
+let memoryConfig = MemoryConfig(expiry: .never, countLimit: 10, totalCostLimit: 10)
+let storage = try? Storage<String, Data>(
+    diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forData())
 
 class VideoPlayerUIView: UIView {
     private var player: AVPlayer!
     private var playerLayer: AVPlayerLayer!
     private var timeObserverToken: Any?
+    private var url: URL!
 
-    init(frame: CGRect, videoURL: URL, isMuted: Bool,isLandScape: Bool ) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool) {
+        url = videoURL
         super.init(frame: frame)
         backgroundColor = .black
-        
-        let playerItem = CachingPlayerItem(url: videoURL)
-        
+        if storage == nil {
+            let eventData: [String: Any] = [
+                "message": "Storage is nil"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+
+        } else {
+            let eventData: [String: Any] = [
+                "message": "Storage is not nil"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        }
+        let playerItem: AVPlayerItem
+        if let cachedAsset = self.asset(for: videoURL) {
+            // if cached data found - just play it
+            playerItem = AVPlayerItem(asset: cachedAsset)
+        } else {
+            // if no data found - stream it from network and save to cache when it's ready
+            playerItem = CachingPlayerItem(url: videoURL)
+            (playerItem as? CachingPlayerItem)?.delegate = self
+        }
+        // playerItem.delegate = self
+
         // Initialize AVPlayer with the player item
         player = AVPlayer(playerItem: playerItem)
         player.isMuted = isMuted
         player.automaticallyWaitsToMinimizeStalling = false
-   
 
         // playerItem.download()
-
 
         // Set up player layer to display the video
         playerLayer = AVPlayerLayer(player: player)
         playerLayer.frame = bounds
-         player.play()
-//        player = AVPlayer(url: videoURL)
-  
-        
-//        playerLayer = AVPlayerLayer(player: player)
-//        playerLayer.frame = bounds
+        player.play()
+        //        player = AVPlayer(url: videoURL)
+
+        //        playerLayer = AVPlayerLayer(player: player)
+        //        playerLayer.frame = bounds
         playerLayer.videoGravity = isLandScape ? .resizeAspect : .resizeAspectFill
         layer.addSublayer(playerLayer)
 
@@ -62,31 +88,34 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
-        
-       
-   
-             
 
     }
     private func addPeriodicTimeObserver() {
         // Add periodic time observer for updating video duration and current time
         let interval = CMTime(seconds: 1, preferredTimescale: 1)
-        
-        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: DispatchQueue.main) { [weak self] time in
-            self?.sendVideoDuration(currentTime: time.seconds, duration: self?.player.currentItem?.duration.seconds ?? 0)
+
+        timeObserverToken = player.addPeriodicTimeObserver(
+            forInterval: interval, queue: DispatchQueue.main
+        ) { [weak self] time in
+            self?.sendVideoDuration(
+                currentTime: time.seconds, duration: self?.player.currentItem?.duration.seconds ?? 0
+            )
         }
     }
-    
-    @objc private func sendVideoDuration(currentTime: Double, duration: Double) {
-         // Prepare the event data and send it to Flutter
-         let eventData: [String: Any] = [
-             "currentTime": currentTime,
-             "duration": duration
-         ]
-        NotificationCenter.default.addObserver(self, selector: #selector(handleSeekToNotification(_:)), name: Notification.Name("SeekToTimeNotification"), object: nil)
 
-         NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
-     }
+    @objc private func sendVideoDuration(currentTime: Double, duration: Double) {
+        // Prepare the event data and send it to Flutter
+        let eventData: [String: Any] = [
+            "currentTime": currentTime,
+            "duration": duration,
+        ]
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleSeekToNotification(_:)),
+            name: Notification.Name("SeekToTimeNotification"), object: nil)
+
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+    }
     @objc private func loopVideo() {
         player.seek(to: .zero)
         player.play()
@@ -125,23 +154,25 @@ class VideoPlayerUIView: UIView {
         switch keyPath {
         case "status":
             if item.status == .readyToPlay {
-//                player.play()
+                //                player.play()
                 let eventData: [String: Any] = [
-                    "started": true,
-                    
+                    "started": true
+
                 ]
-                NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
 
             }
         case "loadedTimeRanges":
             if let currentItem = player.currentItem {
-                let bufferedTime = currentItem.loadedTimeRanges.first?.timeRangeValue.duration.seconds ?? 0
+                let bufferedTime =
+                    currentItem.loadedTimeRanges.first?.timeRangeValue.duration.seconds ?? 0
                 let eventData: [String: Any] = [
-                    "buffering": bufferedTime,
-                    
+                    "buffering": bufferedTime
+
                 ]
-                NotificationCenter.default.post(name: Notification.Name("VideoDurationUpdate"), object: eventData)
-            
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
 
             }
         // case "playbackBufferEmpty":
@@ -165,7 +196,8 @@ class VideoPlayerUIView: UIView {
             item.removeObserver(self, forKeyPath: "status")
         }
         removePeriodicTimeObserver()
-        NotificationCenter.default.removeObserver(self, name: Notification.Name("SeekToTimeNotification"), object: nil)
+        NotificationCenter.default.removeObserver(
+            self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
     }
     private func removePeriodicTimeObserver() {
@@ -201,36 +233,153 @@ class VideoPlayerUIView: UIView {
         // If less than 100% visible → pause, else play
         if visibilityRatio < 0.99 {
             player.pause()
-       
+
         } else {
             player.play()
         }
 
     }
 
-    // UICollectionView DataSource
-
-    // UICollectionView DelegateFlowLayout to define size of each cell
-
-
-    // Play video when it comes into view
-
-
-    //     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    //     for (index, playerView) in playerViews.enumerated() {
-    //         let cellRect = collectionView.layoutAttributesForItem(at: IndexPath(row: index, section: 0))?.frame ?? .zero
-    //         let intersection = cellRect.intersection(scrollView.bounds)
-    //         let visibilityRatio = intersection.width * intersection.height / cellRect.width / cellRect.height
-
-    //         // If less than 100% visible, pause the video
-    //         if visibilityRatio < 0.99 {
-    //             playerView.pause()
-    //         } else {
-    //             // Otherwise, play the video
-    //             playerView.play()
-    //         }
-    //     }
-    // }
 }
 
+extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
+    func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
+        self.save(data: data, for: self.url)
+        let eventData: [String: Any] = [
+            "message": "Video downloaded successfully."
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+    }
+
+    func playerItem(
+        _ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int,
+        outOf bytesExpected: Int
+    ) {
+
+    }
+
+    func playerItemPlaybackStalled(_ playerItem: CachingPlayerItem) {
+        let eventData: [String: Any] = [
+            "message":
+                "Not enough data for playback. Probably because of the poor network. Wait a bit and try to play later."
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"),
+            object:
+                eventData
+        )
+
+    }
+
+    func playerItem(_ playerItem: CachingPlayerItem, downloadingFailedWith error: Error) {
+        let eventData: [String: Any] = [
+            "error": error
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+
+    }
+
+}
+extension VideoPlayerUIView {
+
+    func cacheVideo(from url: URL) {
+        // Attempt to load the video data
+        guard let videoData = try? Data(contentsOf: url) else {
+            let eventData: [String: Any] = [
+                "message": "Failed to load video data from URL."
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            return
+        }
+
+        // Save the video data to disk cache
+        let cacheURL = getCacheURL(for: url)
+        do {
+            try storage?.setObject(videoData, forKey: url.absoluteString)
+            if let cachedData = try? storage?.object(forKey: url.absoluteString),
+                cachedData == videoData
+            {
+                let eventData: [String: Any] = [
+                    "message": "Video cached successfully."
+
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            } else {
+                let eventData: [String: Any] = [
+                    "message": "Failed to cache video data."
+
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            }
+
+        } catch {
+
+            let eventData: [String: Any] = [
+                "message": "Error caching video: \(error)"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+
+        }
+    }
+
+    func getVideo(from url: URL) -> Data? {
+        if let cachedData = try? storage?.object(forKey: url.absoluteString) {
+            return cachedData
+        }
+        let eventData: [String: Any] = [
+            "message": "no cached data found for this URL."
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        return nil
+    }
+
+    func removeVideo(from url: URL) {
+        try? storage?.removeObject(forKey: url.absoluteString)
+    }
+
+    func clearCache() {
+        try? storage?.removeAll()
+    }
+
+    func asset(for url: URL) -> AVAsset? {
+        if let data = getVideo(from: url) {
+            let cacheURL = getCacheURL(for: url)
+            try? data.write(to: cacheURL)
+            return AVURLAsset(url: cacheURL)
+        }
+        let eventData: [String: Any] = [
+            "message": "no cached file found for this URL."
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        return nil
+    }
+
+    func save(data: Data, for url: URL) {
+        cacheVideo(from: url)
+    }
+
+    private func getCacheURL(for url: URL) -> URL {
+        // Define the cache directory and the file name based on the URL's absolute string
+        let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+            .first!
+        let cacheURL = cacheDirectory.appendingPathComponent(url.lastPathComponent)
+
+        return cacheURL
+    }
+}

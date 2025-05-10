@@ -15,28 +15,31 @@ class NativeVideoController {
   static Duration buffered = Duration(microseconds: 0);
   static bool isPlaying = false;
   // Stream to listen for updates from the native side
-  static Stream<Map> onUpdateStream = _eventChannel
-      .receiveBroadcastStream()
-      .map((event) {
-        if (event['started'] != null) {
-          Future.delayed(
-            const Duration(milliseconds: 100),
-            () {
-              isPlaying = event['started'];
-            },
-          );
-        }
-        if (event['currentTime'] != null) {
-          currentTime = setUpMicro(event['currentTime']);
-        }
-        if (event['duration'] != null) {
-          duration = setUpMicro(event['duration']);
-        }
-        if (event['buffering'] != null) {
-          buffered = setUpMicro(event['buffering']);
-        }
-        return event;
-      });
+  static Stream<Map> onUpdateStream =
+      _eventChannel.receiveBroadcastStream().map((event) {
+    if (event['started'] != null) {
+      Future.delayed(
+        const Duration(milliseconds: 100),
+        () {
+          isPlaying = event['started'];
+        },
+      );
+    }
+    if (event['currentTime'] != null) {
+      currentTime = setUpMicro(event['currentTime']);
+    }
+    if (event['duration'] != null) {
+      duration = setUpMicro(event['duration']);
+    }
+    if (event['buffering'] != null) {
+      buffered = setUpMicro(event['buffering']);
+    }
+      if (event['message'] != null) {
+         log(event.toString());
+    }
+
+    return event;
+  });
 
   Future<void> togglePlayPause() async {
     await _channel.invokeMethod('togglePlay');
