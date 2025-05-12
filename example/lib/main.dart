@@ -79,13 +79,13 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                 ),
               ),
               //  if (NativeVideoController.duration.inSeconds != 0)
-              Positioned(
-                bottom: 50,
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width,
-                  child: NativeVideoSlider(),
-                ),
-              ),
+              // Positioned(
+              //   bottom: 50,
+              //   child: SizedBox(
+              //     width: MediaQuery.of(context).size.width,
+              //     child: NativeVideoSlider(),
+              //   ),
+              // ),
             ],
           );
         },

@@ -66,25 +66,27 @@ class VideoPlayerUIView: UIView {
                 return
             }
 
-            playerItem = CachingPlayerItem(url: videoURL)
+          if player == nil{
+              playerItem = CachingPlayerItem(url: videoURL)
             (playerItem as? CachingPlayerItem)?.delegate = self
             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+          }
         }
-        if let cachedAsset = self.asset(for: nextVideo) {
-            let playerItem = AVPlayerItem(asset: cachedAsset)
-        } else {
-            if !isConnectedToNetwork() {
-                let eventData: [String: Any] = [
-                    "message": "No network connection and no cached video found."
+        // if let cachedAsset = self.asset(for: nextVideo) {
+        //     let playerItem = AVPlayerItem(asset: cachedAsset)
+        // } else {
+        //     if !isConnectedToNetwork() {
+        //         let eventData: [String: Any] = [
+        //             "message": "No network connection and no cached video found."
 
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
-                return
-            }
-            let playerItem = CachingPlayerItem(url: nextVideo)
-            (playerItem as? CachingPlayerItem)?.delegate = self
-        }
+        //         ]
+        //         NotificationCenter.default.post(
+        //             name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        //         return
+        //     }
+        //     let playerItem = CachingPlayerItem(url: nextVideo)
+        //     (playerItem as? CachingPlayerItem)?.delegate = self
+        // }
 
     }
     private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
@@ -252,23 +254,23 @@ class VideoPlayerUIView: UIView {
         }
     }
     private func checkVisibilityAndUpdatePlayPause() {
-        guard let window = self.window else { return }
-        let viewFrame = self.convert(self.bounds, to: window)
-        let screenFrame = window.bounds
+        // guard let window = self.window else { return }
+        // let viewFrame = self.convert(self.bounds, to: window)
+        // let screenFrame = window.bounds
 
-        let intersection = screenFrame.intersection(viewFrame)
-        let visibleArea = intersection.width * intersection.height
-        let totalArea = bounds.width * bounds.height
+        // let intersection = screenFrame.intersection(viewFrame)
+        // let visibleArea = intersection.width * intersection.height
+        // let totalArea = bounds.width * bounds.height
 
-        let visibilityRatio = visibleArea / max(totalArea, 1)
+        // let visibilityRatio = visibleArea / max(totalArea, 1)
 
-        // If less than 100% visible → pause, else play
-        if visibilityRatio < 0.99 {
-            player.pause()
+        // // If less than 100% visible → pause, else play
+        // if visibilityRatio < 0.99 {
+        //     player.pause()
 
-        } else {
-            player.play()
-        }
+        // } else {
+        //     player.play()
+        // }
 
     }
 
