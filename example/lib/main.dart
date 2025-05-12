@@ -63,13 +63,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                 ),
               ),
 
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: () async => await controller.togglePlayPause(),
-                  behavior: HitTestBehavior.translucent, // 👈 VERY important!
-                  child: const SizedBox(), // transparent layer
-                ),
-              ),
+          
               Positioned(
                 right: 20,
                 bottom: 100,

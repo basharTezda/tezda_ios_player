@@ -20,6 +20,8 @@ class __NativeVideoSliderStateState extends State<NativeVideoSlider> {
   @override
   Widget build(BuildContext context) {
     return Slider(
+      thumbColor: Colors.red.withOpacity(0.0),
+
       padding: EdgeInsets.all(0),
       activeColor: Color.fromRGBO(255, 255, 255, 1),
       inactiveColor: Colors.transparent,
@@ -31,22 +33,14 @@ class __NativeVideoSliderStateState extends State<NativeVideoSlider> {
               : NativeVideoController.buffered.inMicroseconds /
                   NativeVideoController.duration.inMicroseconds,
       secondaryActiveColor: Colors.grey,
-
       value:
           NativeVideoController.currentTime.inMicroseconds /
           NativeVideoController.duration.inMicroseconds,
-
-      // label: _currentDiscreteSliderValue.round().toString(),
       onChanged: (double value) {
-        // setState(() {
-        //   _sliderValue = value;
         NativeVideoController.seekTo(
           value * NativeVideoController.duration.inMicroseconds / 1000000,
         );
-        // );
-        // log( "value: $value");
-        // _currentDiscreteSliderValue = value;
-        // });
+
       },
     );
   }
