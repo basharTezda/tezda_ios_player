@@ -35,6 +35,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
     super.initState();
   }
 
+  final NativeVideoController controller = NativeVideoController();
   bool shouldPlayVideo = false;
   @override
   Widget build(BuildContext context) => Stack(
@@ -48,6 +49,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               if (info.visibleFraction > .9) {
                 shouldPlayVideo = true;
               }
+              // log("Visibility fraction: ${info.visibleFraction}");
               mounted ? setState(() {}) : null;
             },
             child: shouldPlayVideo
@@ -62,9 +64,22 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                     creationParamsCodec: const StandardMessageCodec(),
                   )
                 : widget.placeholder ?? const SizedBox(),
+            // const SizedBox(
           ),
           if (!NativeVideoController.isPlaying)
             Positioned.fill(child: widget.placeholder ?? const SizedBox()),
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () async => await controller.togglePlayPause(),
+              behavior: HitTestBehavior.translucent,
+              child: const SizedBox(), // transparent layer
+            ),
+          ),
+          Positioned(
+            bottom: 30,
+            child: SizedBox(
+            width: MediaQuery.of(context).size.width,
+            child: NativeVideoSlider(),))
         ],
       );
 }

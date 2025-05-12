@@ -63,13 +63,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                 ),
               ),
 
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: () async => await controller.togglePlayPause(),
-                  behavior: HitTestBehavior.translucent, // 👈 VERY important!
-                  child: const SizedBox(), // transparent layer
-                ),
-              ),
+          
               Positioned(
                 right: 20,
                 bottom: 100,
@@ -79,13 +73,13 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                 ),
               ),
               //  if (NativeVideoController.duration.inSeconds != 0)
-              Positioned(
-                bottom: 50,
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width,
-                  child: NativeVideoSlider(),
-                ),
-              ),
+              // Positioned(
+              //   bottom: 50,
+              //   child: SizedBox(
+              //     width: MediaQuery.of(context).size.width,
+              //     child: NativeVideoSlider(),
+              //   ),
+              // ),
             ],
           );
         },
