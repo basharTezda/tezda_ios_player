@@ -75,11 +75,6 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               child: const SizedBox(), // transparent layer
             ),
           ),
-          Positioned(
-            bottom: 30,
-            child: SizedBox(
-            width: MediaQuery.of(context).size.width,
-            child: NativeVideoSlider(),))
         ],
       );
 }
