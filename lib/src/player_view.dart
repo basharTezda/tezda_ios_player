@@ -1,4 +1,5 @@
 import 'dart:developer';
+import 'dart:nativewrappers/_internal/vm/lib/ffi_allocation_patch.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +14,8 @@ class NativeVideoWidget extends StatefulWidget {
   final Widget? placeholder;
   final String? preloadUrl;
   final Function()? onDoubleTap;
-
+  final Function()? onLongPressStart;
+  final Function()? onLongPressEnd;
   const NativeVideoWidget(
       {super.key,
       required this.url,
@@ -21,7 +23,9 @@ class NativeVideoWidget extends StatefulWidget {
       required this.isLandscape,
       this.placeholder,
       this.preloadUrl,
-      this.onDoubleTap});
+      this.onDoubleTap,
+      this.onLongPressStart,
+      this.onLongPressEnd});
 
   @override
   State<NativeVideoWidget> createState() => _NativeVideoWidgetState();
@@ -73,7 +77,9 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               Positioned.fill(child: widget.placeholder ?? const SizedBox()),
             Positioned.fill(
               child: GestureDetector(
-                onDoubleTap:  widget.onDoubleTap,
+                onDoubleTapDown: (d) => widget.onDoubleTap,
+                onLongPressStart: (d) => widget.onLongPressStart,
+                onLongPressEnd: (d) => widget.onLongPressEnd,
                 onTap: () async => !NativeVideoController.isPlaying
                     ? await controller.play()
                     : await controller.pause(),
