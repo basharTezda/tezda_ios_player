@@ -12,7 +12,7 @@ class NativeVideoWidget extends StatefulWidget {
   final bool isLandscape;
   final Widget? placeholder;
   final String? preloadUrl;
-  final Function()? onDoubleTap;
+  final Function(TapDownDetails)? onDoubleTapDown;
   final Function()? onLongPressStart;
   final Function()? onLongPressEnd;
   const NativeVideoWidget(
@@ -22,7 +22,7 @@ class NativeVideoWidget extends StatefulWidget {
       required this.isLandscape,
       this.placeholder,
       this.preloadUrl,
-      this.onDoubleTap,
+      this.onDoubleTapDown,
       this.onLongPressStart,
       this.onLongPressEnd});
 
@@ -76,7 +76,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               Positioned.fill(child: widget.placeholder ?? const SizedBox()),
             Positioned.fill(
               child: GestureDetector(
-                onDoubleTapDown: (d) => widget.onDoubleTap?.call(),
+                onDoubleTapDown: (d) => widget.onDoubleTapDown?.call(d),
                 onLongPressStart: (d) => widget.onLongPressStart?.call(),
                 onLongPressEnd: (d) => widget.onLongPressEnd?.call(),
                 onTap: () async => !NativeVideoController.isPlaying
