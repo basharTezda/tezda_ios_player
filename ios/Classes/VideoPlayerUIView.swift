@@ -66,11 +66,11 @@ class VideoPlayerUIView: UIView {
                 return
             }
 
-          if player == nil{
-              playerItem = CachingPlayerItem(url: videoURL)
-            (playerItem as? CachingPlayerItem)?.delegate = self
-            initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-          }
+            if player == nil {
+                playerItem = CachingPlayerItem(url: videoURL)
+                (playerItem as? CachingPlayerItem)?.delegate = self
+                initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+            }
         }
         // if let cachedAsset = self.asset(for: nextVideo) {
         //     let playerItem = AVPlayerItem(asset: cachedAsset)
@@ -98,7 +98,12 @@ class VideoPlayerUIView: UIView {
         player.play()
         playerLayer.videoGravity = isLandScape ? .resizeAspect : .resizeAspectFill
         layer.addSublayer(playerLayer)
+        let eventData: [String: Any] = [
+            "isPlaying": true
 
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
         if let item = player.currentItem {
             item.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
             item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: nil)
@@ -120,6 +125,12 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.addObserver(
             self, selector: #selector(togglePlayPause),
             name: NSNotification.Name("TogglePlayPause"), object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(play),
+            name: NSNotification.Name("play"), object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(pause),
+            name: NSNotification.Name("pause"), object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
@@ -164,7 +175,32 @@ class VideoPlayerUIView: UIView {
             }
         }
     }
+    @objc private func play() {
+        DispatchQueue.main.async {
+            if self.player.timeControlStatus == .paused {
+                self.player.play()
+                let eventData: [String: Any] = [
+                    "isPlaying": true
 
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            }
+        }
+    }
+    @objc private func pause() {
+        DispatchQueue.main.async {
+            if self.player.timeControlStatus == .playing {
+                self.player.pause()
+                let eventData: [String: Any] = [
+                    "isPlaying": false
+
+                ]
+                NotificationCenter.default.post(
+                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            }
+        }
+    }
     @objc private func toggleMute() {
         player.isMuted = !player.isMuted
     }
