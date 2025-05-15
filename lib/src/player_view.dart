@@ -12,15 +12,16 @@ class NativeVideoWidget extends StatefulWidget {
   final bool isLandscape;
   final Widget? placeholder;
   final String? preloadUrl;
+  final Function()? onDoubleTap;
 
-  const NativeVideoWidget({
-    super.key,
-    required this.url,
-    required this.shouldMute,
-    required this.isLandscape,
-    this.placeholder,
-    this.preloadUrl,
-  });
+  const NativeVideoWidget(
+      {super.key,
+      required this.url,
+      required this.shouldMute,
+      required this.isLandscape,
+      this.placeholder,
+      this.preloadUrl,
+      this.onDoubleTap});
 
   @override
   State<NativeVideoWidget> createState() => _NativeVideoWidgetState();
@@ -38,8 +39,9 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   final NativeVideoController controller = NativeVideoController();
   bool shouldPlayVideo = false;
   @override
-  Widget build(BuildContext context) => Container(color: Colors.black,
-    child: Stack(
+  Widget build(BuildContext context) => Container(
+        color: Colors.black,
+        child: Stack(
           children: [
             VisibilityDetector(
               key: Key(widget.url),
@@ -64,14 +66,14 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                       },
                       creationParamsCodec: const StandardMessageCodec(),
                     )
-                  : widget.placeholder ?? const SizedBox(),
+                  : widget.placeholder!,
               // const SizedBox(
             ),
-           
             if (!NativeVideoController.isReady)
               Positioned.fill(child: widget.placeholder ?? const SizedBox()),
             Positioned.fill(
               child: GestureDetector(
+                onDoubleTap:  widget.onDoubleTap,
                 onTap: () async => !NativeVideoController.isPlaying
                     ? await controller.play()
                     : await controller.pause(),
@@ -81,5 +83,5 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
             ),
           ],
         ),
-  );
+      );
 }

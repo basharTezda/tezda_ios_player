@@ -1,4 +1,5 @@
-import 'dart:math';
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 import 'const.dart';
@@ -30,6 +31,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
 
   @override
   void initState() {
+ 
     super.initState();
   }
 
@@ -44,10 +46,10 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
         scrollDirection: Axis.vertical,
         itemCount: videos.length,
         itemBuilder: (context, index) {
-          final randomIndex = true ? index : Random().nextInt(videos.length);
-          final nextVideo = videos[randomIndex + 1];
+          // final randomIndex = true ? index : Random().nextInt(videos.length);
+          final nextVideo = videos[index + 1];
           preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl = videos.reversed.toList()[randomIndex];
+          final videoUrl = videos.reversed.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
@@ -61,25 +63,18 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                   width: MediaQuery.of(context).size.width,
                   height: MediaQuery.of(context).size.height,
                 ),
+                onDoubleTap: () {
+                  log("double tapped");
+                },
               ),
 
-          
               Positioned(
-                right: 20,
-                bottom: 100,
-                child: IconButton(
-                  icon: const Icon(Icons.volume_up, color: Colors.white),
-                  onPressed: () => controller.toggleMute(),
+                bottom: 10,
+                child: SizedBox(
+                  width: MediaQuery.of(context).size.width,
+                  child: NativeVideoSlider(),
                 ),
               ),
-              //  if (NativeVideoController.duration.inSeconds != 0)
-              // Positioned(
-              //   bottom: 50,
-              //   child: SizedBox(
-              //     width: MediaQuery.of(context).size.width,
-              //     child: NativeVideoSlider(),
-              //   ),
-              // ),
             ],
           );
         },
