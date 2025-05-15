@@ -76,9 +76,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               Positioned.fill(child: widget.placeholder ?? const SizedBox()),
             Positioned.fill(
               child: GestureDetector(
-                onDoubleTap: () {
-                  widget.onDoubleTap?.call();
-                },
+                onDoubleTapDown: (d) => widget.onDoubleTap?.call(),
                 onLongPressStart: (d) => widget.onLongPressStart?.call(),
                 onLongPressEnd: (d) => widget.onLongPressEnd?.call(),
                 onTap: () async => !NativeVideoController.isPlaying
