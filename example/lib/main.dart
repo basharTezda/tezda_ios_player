@@ -32,9 +32,9 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
   @override
   void initState() {
     NativeVideoController.onUpdateStream.listen((onData) {
-      if (NativeVideoController.isFinished) {
-        print(NativeVideoController.isFinished);
-      }
+      // if (NativeVideoController.isFinished) {
+      //   print(NativeVideoController.isFinished);
+      // }
     });
     super.initState();
   }
