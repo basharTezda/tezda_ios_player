@@ -19,6 +19,12 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
             case "togglePlay":
                 NotificationCenter.default.post(name: NSNotification.Name("TogglePlayPause"), object: nil)
                 result(nil)
+                 case "play":
+                NotificationCenter.default.post(name: NSNotification.Name("play"), object: nil)
+                result(nil)
+                 case "pause":
+                NotificationCenter.default.post(name: NSNotification.Name("pause"), object: nil)
+                result(nil)
                 
             case "toggleMute":
                 NotificationCenter.default.post(name: NSNotification.Name("ToggleMute"), object: nil)

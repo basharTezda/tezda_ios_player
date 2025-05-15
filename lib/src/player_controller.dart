@@ -14,6 +14,7 @@ class NativeVideoController {
   static Duration duration = Duration(microseconds: 1);
   static Duration buffered = Duration(microseconds: 0);
   static bool isPlaying = false;
+  static bool isReady = false;
   // Stream to listen for updates from the native side
   static Stream<Map> onUpdateStream =
       _eventChannel.receiveBroadcastStream().map((event) {
@@ -21,9 +22,12 @@ class NativeVideoController {
       Future.delayed(
         const Duration(milliseconds: 100),
         () {
-          isPlaying = event['started'];
+          isReady = event['started'];
         },
       );
+    }
+    if (event['isPlaying'] != null) {
+      isPlaying = event['isPlaying'];
     }
     if (event['currentTime'] != null) {
       currentTime = setUpMicro(event['currentTime']);
@@ -34,9 +38,9 @@ class NativeVideoController {
     if (event['buffering'] != null) {
       buffered = setUpMicro(event['buffering']);
     }
-      if (event['message'] != null) {
-         log(event.toString());
-    }
+    // if (event['message'] != null) {
+    //   log(event.toString());
+    // }
 
     return event;
   });
@@ -49,6 +53,14 @@ class NativeVideoController {
     await _channel.invokeMethod('toggleMute');
   }
 
+  Future<void> play() async {
+    await _channel.invokeMethod('play');
+  }
+
+  Future<void> pause() async {
+    await _channel.invokeMethod('pause');
+  }
+
   static Future<void> seekTo(double seconds) async {
     try {
       await _channel.invokeMethod('seekTo', {'time': seconds});
@@ -58,7 +70,11 @@ class NativeVideoController {
   }
 
   static Duration setUpMicro(double duration) {
-    return Duration(microseconds: (duration * 1000000).toInt());
+    try {
+      return Duration(microseconds: (duration * 1000000).toInt());
+    } catch (e) {
+      return Duration(microseconds: 0);
+    }
   }
 
   static Future<void> reset() async {
