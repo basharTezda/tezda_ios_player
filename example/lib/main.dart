@@ -67,7 +67,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                   width: MediaQuery.of(context).size.width,
                   height: MediaQuery.of(context).size.height,
                 ),
-                onDoubleTap: () {
+                onDoubleTapDown: (d) {
                   log("double tapped");
                 },
               ),
