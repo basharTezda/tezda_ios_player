@@ -51,6 +51,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
               onVisibilityChanged: (info) {
                 if (info.visibleFraction < .1) {
                   shouldPlayVideo = false;
+                  controller.pause();
                 }
                 if (info.visibleFraction > .9) {
                   shouldPlayVideo = true;
