@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert' show jsonDecode;
 import 'dart:developer';
 import 'package:flutter/services.dart';
 
@@ -18,7 +19,8 @@ class NativeVideoController {
   static bool isFinished = false;
   // Stream to listen for updates from the native side
   static Stream<Map> onUpdateStream =
-      _eventChannel.receiveBroadcastStream().map((event) {
+      _eventChannel.receiveBroadcastStream().map((data) {
+    final event = _extractMessage(data['event']);
     if (event['started'] != null) {
       isReady = event['started'];
     }
@@ -82,5 +84,19 @@ class NativeVideoController {
     isPlaying = false;
     isReady = false;
     isFinished = false;
+  }
+
+  static _extractMessage(data) {
+    return _convertToObject(data.toString());
+  }
+
+  static Map<String, dynamic> _convertToObject(String str) {
+    try {
+      Map<String, dynamic> myMap =
+          jsonDecode(str.replaceAll("[", "{").replaceAll("]", "}"));
+      return myMap;
+    } catch (e) {
+      return {"error": e.toString()};
+    }
   }
 }

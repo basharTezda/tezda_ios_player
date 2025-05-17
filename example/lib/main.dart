@@ -53,7 +53,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           final nextVideo = videos[index + 1];
           preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl = videos.reversed.toList()[index];
+          final videoUrl = videos.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
