@@ -34,11 +34,13 @@ class __NativeVideoSliderStateState extends State<NativeVideoSlider> {
                 NativeVideoController.duration.inMicroseconds,
         secondaryActiveColor: Colors.grey,
         value: NativeVideoController.currentTime.inMicroseconds /
+
             NativeVideoController.duration.inMicroseconds,
         onChanged: (double value) {
           NativeVideoController.seekTo(
             value * NativeVideoController.duration.inMicroseconds / 1000000,
           );
+
         },
       ),
     );
