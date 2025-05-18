@@ -55,6 +55,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                 }
                 if (info.visibleFraction > .9) {
                   shouldPlayVideo = true;
+                   controller.play();
                 }
                 // log("Visibility fraction: ${info.visibleFraction}");
                 mounted ? setState(() {}) : null;

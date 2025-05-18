@@ -61,7 +61,13 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         self.eventSink = nil
         return nil
     }
-    public func sendEventToFlutter(event: [String: Any] ) {
-        eventSink?(event)
+    public func sendEventToFlutter(event: Any ) {
+        do {
+            let result = try  eventSink?(["event": "\(event)"])
+            print("Success:", result)
+        } catch {
+            print("Error:", error)
+        }
+       
     }
 }

@@ -3,43 +3,74 @@ import UIKit
 
 class VideoPlatformView: NSObject, FlutterPlatformView {
     private let playerView: VideoPlayerUIView
-
+    private let staticUrl: URL = URL(string: "https://commondatastorage.googleapislkdsajfklajslkfjsa.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4")!
+    
     init(frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) {
-        let url: URL
-        let isMuted: Bool
-        let isLandScape: Bool
-        let preLoad: URL
-        if let dict = args as? [String: Any],
-            let urlStr = dict["url"] as? String,
-            let preLoadUrl = dict["preLoadUrl"] as? String,
-            let mute = dict["shouldMute"] as? Bool,
-            let isLandScapeFromDict = dict["isLandscape"] as? Bool,
-            let parsed = URL(string: urlStr)
-        {
-            url = parsed
-            isMuted = mute
-            isLandScape = isLandScapeFromDict
-            preLoad = URL(string: preLoadUrl)!
-        } else {
-            url = URL(
-                string:
-                    "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4"
-            )!
-            isMuted = false
-            isLandScape = false
-            preLoad = url
+        // Default values
+        var url: URL = staticUrl
+        var isMuted: Bool = false
+        var isLandScape: Bool = false
+        var preLoad: URL = staticUrl
+        
+        if let dict = args as? [String: Any] {
+            // Validate main URL
+            if let urlStr = dict["url"] as? String,
+               let validatedUrl = VideoPlatformView.validateURL(urlStr) {
+                url = validatedUrl
+            } else {
+                print("Invalid main video URL, using fallback")
+            }
+            
+            // Validate preload URL
+            if let preLoadStr = dict["preLoadUrl"] as? String,
+               let validatedPreload = VideoPlatformView.validateURL(preLoadStr) {
+                preLoad = validatedPreload
+            } else {
+                print("Invalid preload URL, using main URL as fallback")
+                preLoad = url
+            }
+            
+            // Get other parameters
+            isMuted = dict["shouldMute"] as? Bool ?? false
+            isLandScape = dict["isLandscape"] as? Bool ?? false
         }
-
+        
         playerView = VideoPlayerUIView(
-            frame: frame, videoURL: url, isMuted: isMuted, isLandScape: isLandScape,
-            nextVideo: preLoad)
-
+            frame: frame,
+            videoURL: url,
+            isMuted: isMuted,
+            isLandScape: isLandScape,
+            nextVideo: preLoad
+        )
+        
         super.init()
-
     }
-
+    
     func view() -> UIView {
-
         return playerView
+    }
+    
+    // MARK: - URL Validation
+    private static func validateURL(_ urlString: String) -> URL? {
+        // Basic URL structure validation
+        guard let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil else {
+            return nil
+        }
+        
+        // Additional validation if needed
+        if !isReachableURL(url) {
+            print("URL is not reachable: \(urlString)")
+            return nil
+        }
+        
+        return url
+    }
+    
+    private static func isReachableURL(_ url: URL) -> Bool {
+        // Add any specific domain validation if needed
+        return true // Default to true unless you need specific checks
     }
 }

@@ -33,22 +33,14 @@ class VideoPlayerUIView: UIView {
         url = videoURL
         super.init(frame: frame)
         backgroundColor = .black
-        if storage == nil {
-            let eventData: [String: Any] = [
-                "message": "Storage is nil"
-
-            ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
-
+        if let url = URL(string: videoURL.absoluteString) {
+            // Valid URL
+            print("Valid URL: \(url)")
         } else {
-            let eventData: [String: Any] = [
-                "message": "Storage is not nil"
-
-            ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            // Invalid URL
+            print("Invalid URL")
         }
+     
         let playerItem: AVPlayerItem
         if let cachedAsset = self.asset(for: videoURL) {
             playerItem = AVPlayerItem(asset: cachedAsset)
@@ -60,7 +52,7 @@ class VideoPlayerUIView: UIView {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object: "No network connection and no cached video found.")
                 playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
                 return
