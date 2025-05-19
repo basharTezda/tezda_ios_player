@@ -53,14 +53,13 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           final nextVideo = videos[index + 1];
           preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl =false?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.reversed.toList()[index];
+          final videoUrl =false?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
-                onVisibilityChanged: (p0) => log(p0.toString()),
                 url: videoUrl,
                 preloadUrl: nextVideo,
-                shouldMute: true,
+                shouldMute: false,
                 isLandscape: false,
                 placeholder: Image.network(
                   generateThumbnailUrl(videoUrl),

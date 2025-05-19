@@ -28,9 +28,12 @@ class VideoPlayerUIView: UIView {
     private var playerLayer: AVPlayerLayer!
     private var timeObserverToken: Any?
     private var url: URL!
+    private var nextVideoUrl: URL!
+    private var nextVideoPlayerItem: CachingPlayerItem?
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideo: URL) {
         url = videoURL
+        nextVideoUrl = nextVideo
         super.init(frame: frame)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
@@ -40,7 +43,7 @@ class VideoPlayerUIView: UIView {
             // Invalid URL
             print("Invalid URL")
         }
-     
+
         let playerItem: AVPlayerItem
         if let cachedAsset = self.asset(for: videoURL) {
             playerItem = AVPlayerItem(asset: cachedAsset)
@@ -52,7 +55,8 @@ class VideoPlayerUIView: UIView {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: "No network connection and no cached video found.")
+                    name: Notification.Name("VideoDurationUpdate"),
+                    object: "No network connection and no cached video found.")
                 playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
                 return
@@ -64,22 +68,35 @@ class VideoPlayerUIView: UIView {
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
             }
         }
-        // if let cachedAsset = self.asset(for: nextVideo) {
-        //     let playerItem = AVPlayerItem(asset: cachedAsset)
-        // } else {
-        //     if !isConnectedToNetwork() {
-        //         let eventData: [String: Any] = [
-        //             "message": "No network connection and no cached video found."
+        cacheNextVideoIfNeeded()
+    }
+    private func cacheNextVideoIfNeeded() {
+        // Check if we already have this video cached
+        if self.asset(for: nextVideoUrl) != nil {
+            return
+        }
 
-        //         ]
-        //         NotificationCenter.default.post(
-        //             name: Notification.Name("VideoDurationUpdate"), object: eventData)
-        //         return
-        //     }
-        //     let playerItem = CachingPlayerItem(url: nextVideo)
-        //     (playerItem as? CachingPlayerItem)?.delegate = self
-        // }
+        // Only cache if we have network connection
+        guard isConnectedToNetwork() else {
+            return
+        }
 
+        // Create and prepare the next video player item for caching
+        nextVideoPlayerItem = CachingPlayerItem(url: nextVideoUrl)
+        nextVideoPlayerItem?.delegate = self
+
+        // We don't actually need to play it, just prepare it for caching
+        let tempPlayer = AVPlayer(playerItem: nextVideoPlayerItem)
+        tempPlayer.automaticallyWaitsToMinimizeStalling = false
+        tempPlayer.isMuted = true
+
+        // Set rate to 0.1 to start loading but not actually play
+        tempPlayer.rate = 0.1
+
+        // After a short delay, pause it to prevent unnecessary bandwidth usage
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            tempPlayer.rate = 0
+        }
     }
     private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
         player = AVPlayer(playerItem: playerItem)
@@ -307,13 +324,16 @@ class VideoPlayerUIView: UIView {
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        self.save(data: data, for: self.url)
-        let eventData: [String: Any] = [
-            "message": "Video downloaded successfully."
+        let urlToCache = (playerItem == nextVideoPlayerItem) ? nextVideoUrl : url
+        self.save(data: data, for: urlToCache!)
 
+        let eventData: [String: Any] = [
+            "message": "Video downloaded successfully.",
+            "isNextVideo": playerItem == nextVideoPlayerItem,
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"),
+            object: eventData)
     }
 
     func playerItem(
@@ -401,7 +421,7 @@ extension VideoPlayerUIView {
             return cachedData
         }
         let eventData: [String: Any] = [
-            "message": "no cached data found for this URL."
+            "message": "no cached data found for this \(url.absoluteString)."
 
         ]
         NotificationCenter.default.post(
@@ -424,7 +444,7 @@ extension VideoPlayerUIView {
             return AVURLAsset(url: cacheURL)
         }
         let eventData: [String: Any] = [
-            "message": "no cached file found for this URL."
+            "message": "no cached file found for this \(url.absoluteString)."
 
         ]
         NotificationCenter.default.post(
