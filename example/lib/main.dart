@@ -53,13 +53,13 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           final nextVideo = videos[index + 1];
           preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl = videos.toList()[index];
+          final videoUrl =false?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
                 url: videoUrl,
                 preloadUrl: nextVideo,
-                shouldMute: true,
+                shouldMute: false,
                 isLandscape: false,
                 placeholder: Image.network(
                   generateThumbnailUrl(videoUrl),
@@ -73,11 +73,8 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
               ),
 
               Positioned(
-                bottom: 10,
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width,
-                  child: NativeVideoSlider(),
-                ),
+                bottom: 40,left: -20,
+                child: NativeVideoSlider(),
               ),
             ],
           );
