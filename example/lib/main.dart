@@ -57,6 +57,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           return Stack(
             children: [
               NativeVideoWidget(
+                onVisibilityChanged: (p0) => log(p0.toString()),
                 url: videoUrl,
                 preloadUrl: nextVideo,
                 shouldMute: true,

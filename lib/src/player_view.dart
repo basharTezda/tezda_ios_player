@@ -1,9 +1,6 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-
 import '../tezda_ios_player.dart';
 
 class NativeVideoWidget extends StatefulWidget {
@@ -15,6 +12,7 @@ class NativeVideoWidget extends StatefulWidget {
   final Function(TapDownDetails)? onDoubleTapDown;
   final Function()? onLongPressStart;
   final Function()? onLongPressEnd;
+  final Function(VisibilityInfo)? onVisibilityChanged;
   const NativeVideoWidget(
       {super.key,
       required this.url,
@@ -24,6 +22,7 @@ class NativeVideoWidget extends StatefulWidget {
       this.preloadUrl,
       this.onDoubleTapDown,
       this.onLongPressStart,
+      this.onVisibilityChanged,
       this.onLongPressEnd});
 
   @override
@@ -49,6 +48,10 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
             VisibilityDetector(
               key: Key(widget.url),
               onVisibilityChanged: (info) {
+                if (widget.onVisibilityChanged != null) {
+                  widget.onVisibilityChanged?.call(info);
+                }
+
                 if (info.visibleFraction < .1) {
                   shouldPlayVideo = false;
                   controller.pause();
