@@ -3,7 +3,7 @@ PODS:
   - Flutter (1.0.0)
   - integration_test (0.0.1):
     - Flutter
-  - tezda_ios_player (0.0.1):
+  - tezda_ios_player (0.0.9):
     - Cache
     - Flutter
 
@@ -28,7 +28,7 @@ SPEC CHECKSUMS:
   Cache: 4ca7e00363fca5455f26534e5607634c820ffc2d
   Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
-  tezda_ios_player: d3ff5006e8af356e02176b392d80a84838a77fde
+  tezda_ios_player: ee6d290729e387ced3dc1d1c8eac95c1c0cb0911
 
 PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
 
