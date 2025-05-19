@@ -23,7 +23,7 @@ class __NativeVideoSliderStateState extends State<NativeVideoSlider> {
   @override
   Widget build(BuildContext context) {
     return FlutterSlider(
-      values: [NativeVideoController.currentTime.inMicroseconds.ceilToDouble()],
+      values: [NativeVideoController.currentTime.inMicroseconds.ceilToDouble(),NativeVideoController.buffered.inMicroseconds.ceilToDouble()],
       max: NativeVideoController.duration.inMicroseconds.ceilToDouble(),
       min: 0,
       handler: FlutterSliderHandler(

@@ -60,8 +60,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                 // log("Visibility fraction: ${info.visibleFraction}");
                 mounted ? setState(() {}) : null;
               },
-              child: shouldPlayVideo
-                  ? UiKitView(
+              child:  UiKitView(
                       viewType: 'native_video_player',
                       creationParams: {
                         'url': widget.url,
@@ -70,8 +69,8 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                         "preLoadUrl": widget.preloadUrl ?? widget.url,
                       },
                       creationParamsCodec: const StandardMessageCodec(),
-                    )
-                  : widget.placeholder!,
+                    ),
+                
               // const SizedBox(
             ),
             if (!NativeVideoController.isReady)

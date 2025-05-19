@@ -53,7 +53,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           final nextVideo = videos[index + 1];
           preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl = videos.reversed.toList()[index];
+          final videoUrl =true?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.reversed.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
@@ -61,12 +61,12 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                 preloadUrl: nextVideo,
                 shouldMute: true,
                 isLandscape: false,
-                placeholder: Image.network(
-                  generateThumbnailUrl(videoUrl),
-                  fit: BoxFit.cover,
-                  width: MediaQuery.of(context).size.width,
-                  height: MediaQuery.of(context).size.height,
-                ),
+                // placeholder: Image.network(
+                //   generateThumbnailUrl(videoUrl),
+                //   fit: BoxFit.cover,
+                //   width: MediaQuery.of(context).size.width,
+                //   height: MediaQuery.of(context).size.height,
+                // ),
                 onDoubleTapDown: (d) {
                   log("double tapped");
                 },
