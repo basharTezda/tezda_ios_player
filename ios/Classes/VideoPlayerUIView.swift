@@ -29,11 +29,11 @@ class VideoPlayerUIView: UIView {
     private var timeObserverToken: Any?
     private var url: URL!
     private var nextVideoUrl: URL!
-    private var nextVideoPlayerItem: CachingPlayerItem?
+    
+    private var nextVideoPlayerItems: [CachingPlayerItem] = []
 
-    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideo: URL) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
         url = videoURL
-        nextVideoUrl = nextVideo
         super.init(frame: frame)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
@@ -49,18 +49,18 @@ class VideoPlayerUIView: UIView {
             playerItem = AVPlayerItem(asset: cachedAsset)
             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
         } else {
-            if !isConnectedToNetwork() {
-                let eventData: [String: Any] = [
-                    "message": "No network connection and no cached video found."
+            // if !isConnectedToNetwork() {
+            //     let eventData: [String: Any] = [
+            //         "message": "No network connection and no cached video found."
 
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"),
-                    object: "No network connection and no cached video found.")
-                playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
-                initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-                return
-            }
+            //     ]
+            //     NotificationCenter.default.post(
+            //         name: Notification.Name("VideoDurationUpdate"),
+            //         object: "No network connection and no cached video found.")
+            //     playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
+            //     initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+            //     return
+            // }
 
             if player == nil {
                 playerItem = CachingPlayerItem(url: videoURL)
@@ -68,22 +68,60 @@ class VideoPlayerUIView: UIView {
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
             }
         }
-        cacheNextVideoIfNeeded()
+        self.cacheVideoUrls(urls: nextVideos) { FlutterResult in
+            let eventData: [String: Any] = [
+                "message": "Result \(FlutterResult)"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        }
     }
-    private func cacheNextVideoIfNeeded() {
+    public func cacheVideoUrls(urls: [String], result: @escaping FlutterResult) {
+        
+    DispatchQueue.global(qos: .utility).async {
+        
+        let group = DispatchGroup()
+        for urlString in urls {
+        
+            guard let urlo = URL(string: urlString) else {
+            
+                continue
+                
+            }
+            group.enter()
+            
+            self.cacheNextVideoIfNeeded(url: urlo ) {
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            result(true)
+        }
+       }
+     }
+    private func cacheNextVideoIfNeeded(url: URL  , completion: @escaping () -> Void) {
         // Check if we already have this video cached
-        if self.asset(for: nextVideoUrl) != nil {
+        if self.asset(for: url) != nil {
+            completion()
             return
         }
 
         // Only cache if we have network connection
         guard isConnectedToNetwork() else {
+            completion()
             return
         }
+        let eventData: [String: Any] = [
+            "message": "trying to cache \(url.absoluteString)"
 
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
         // Create and prepare the next video player item for caching
-        nextVideoPlayerItem = CachingPlayerItem(url: nextVideoUrl)
-        nextVideoPlayerItem?.delegate = self
+       let nextVideoPlayerItem = CachingPlayerItem(url: url)
+        nextVideoPlayerItem.delegate = self
+      
 
         // We don't actually need to play it, just prepare it for caching
         let tempPlayer = AVPlayer(playerItem: nextVideoPlayerItem)
@@ -92,11 +130,12 @@ class VideoPlayerUIView: UIView {
 
         // Set rate to 0.1 to start loading but not actually play
         tempPlayer.rate = 0.1
-
+        nextVideoPlayerItems.append(nextVideoPlayerItem)
         // After a short delay, pause it to prevent unnecessary bandwidth usage
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             tempPlayer.rate = 0
         }
+        completion()
     }
     private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
         player = AVPlayer(playerItem: playerItem)
@@ -324,12 +363,13 @@ class VideoPlayerUIView: UIView {
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        let urlToCache = (playerItem == nextVideoPlayerItem) ? nextVideoUrl : url
+        let isPlayerItemInNextItems = nextVideoPlayerItems.contains { $0 == playerItem }
+        let urlToCache = isPlayerItemInNextItems ? playerItem.url : url
         self.save(data: data, for: urlToCache!)
 
         let eventData: [String: Any] = [
             "message": "Video downloaded successfully.",
-            "isNextVideo": playerItem == nextVideoPlayerItem,
+            "isNextVideo": isPlayerItemInNextItems,
         ]
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"),
@@ -465,3 +505,8 @@ extension VideoPlayerUIView {
         return cacheURL
     }
 }
+//extension CachingPlayerItem {
+//    var accessibleUrl: URL? {
+//        return self.value(forKey: "url") as? URL
+//    }
+//}

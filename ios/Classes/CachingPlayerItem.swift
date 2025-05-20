@@ -169,7 +169,7 @@ open class CachingPlayerItem: AVPlayerItem {
     }
     
     fileprivate let resourceLoaderDelegate = ResourceLoaderDelegate()
-    fileprivate let url: URL
+     let url: URL
     fileprivate let initialScheme: String?
     fileprivate var customFileExtension: String?
     
