@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 import 'const.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -52,7 +50,9 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           // final nextVideo = videos[index + 1];
           // preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl =false?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.toList()[index];
+          final videoUrl = false
+              ? "https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4"
+              : videos.toList()[index];
           return Stack(
             children: [
               NativeVideoWidget(
@@ -70,9 +70,9 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                   log("double tapped");
                 },
               ),
-
               Positioned(
-                bottom: 40,left: -20,
+                bottom: 40,
+                left: -20,
                 child: NativeVideoSlider(),
               ),
             ],

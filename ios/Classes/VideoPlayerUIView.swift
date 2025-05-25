@@ -29,8 +29,10 @@ class VideoPlayerUIView: UIView {
     private var timeObserverToken: Any?
     private var url: URL!
     private var nextVideoUrl: URL!
-    
+
     private var nextVideoPlayerItems: [CachingPlayerItem] = []
+    private var appStateObservers = [NSObjectProtocol]()
+    private var isInAppSwitcher = false
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
         url = videoURL
@@ -68,39 +70,117 @@ class VideoPlayerUIView: UIView {
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
             }
         }
+        setupAppStateObservers()
+        setupAppSwitcherObservers()
+
         self.cacheVideoUrls(urls: nextVideos) { FlutterResult in
+            // let eventData: [String: Any] = [
+            //     "message": "Result \(FlutterResult)"
+
+            // ]
+            // NotificationCenter.default.post(
+            //     name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        }
+
+    }
+    private func setupAppStateObservers() {
+        // Observe app going to background
+        let backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pause()
             let eventData: [String: Any] = [
-                "message": "Result \(FlutterResult)"
+                "message": " app in background"
 
             ]
             NotificationCenter.default.post(
                 name: Notification.Name("VideoDurationUpdate"), object: eventData)
         }
+
+        // Observe app coming to foreground
+        let foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            let eventData: [String: Any] = [
+                "message": " app in foreground"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            // Only resume if the view is visible
+            if self?.isViewVisible() == true {
+                self?.play()
+            }
+        }
+
+        appStateObservers.append(contentsOf: [backgroundObserver, foregroundObserver])
+    }
+    private func setupAppSwitcherObservers() {
+        // Observe when app enters app switcher
+        let willResignObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInAppSwitcher = true
+            self?.pause()
+        }
+
+        // Observe when app returns from app switcher
+        let didBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInAppSwitcher = false
+            if self?.isViewVisible() == true {
+                self?.play()
+            }
+        }
+
+        appStateObservers.append(contentsOf: [willResignObserver, didBecomeActiveObserver])
+    }
+    private func isViewVisible() -> Bool {
+        guard !isInAppSwitcher else { return false }
+        guard let window = self.window else { return false }
+        let viewFrame = self.convert(self.bounds, to: window)
+        let screenFrame = window.bounds
+
+        let intersection = screenFrame.intersection(viewFrame)
+        let visibleArea = intersection.width * intersection.height
+        let totalArea = bounds.width * bounds.height
+
+        let visibilityRatio = visibleArea / max(totalArea, 1)
+        return visibilityRatio >= 0.99
     }
     public func cacheVideoUrls(urls: [String], result: @escaping FlutterResult) {
-        
-    DispatchQueue.global(qos: .utility).async {
-        
-        let group = DispatchGroup()
-        for urlString in urls {
-        
-            guard let urlo = URL(string: urlString) else {
-            
-                continue
-                
+
+        DispatchQueue.global(qos: .utility).async {
+
+            let group = DispatchGroup()
+            for urlString in urls {
+
+                guard let urlo = URL(string: urlString) else {
+
+                    continue
+
+                }
+                group.enter()
+
+                self.cacheNextVideoIfNeeded(url: urlo) {
+                    group.leave()
+                }
             }
-            group.enter()
-            
-            self.cacheNextVideoIfNeeded(url: urlo ) {
-                group.leave()
+            group.notify(queue: .main) {
+                result(true)
             }
         }
-        group.notify(queue: .main) {
-            result(true)
-        }
-       }
-     }
-    private func cacheNextVideoIfNeeded(url: URL  , completion: @escaping () -> Void) {
+    }
+    private func cacheNextVideoIfNeeded(url: URL, completion: @escaping () -> Void) {
         // Check if we already have this video cached
         if self.asset(for: url) != nil {
             completion()
@@ -119,9 +199,8 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"), object: eventData)
         // Create and prepare the next video player item for caching
-       let nextVideoPlayerItem = CachingPlayerItem(url: url)
+        let nextVideoPlayerItem = CachingPlayerItem(url: url)
         nextVideoPlayerItem.delegate = self
-      
 
         // We don't actually need to play it, just prepare it for caching
         let tempPlayer = AVPlayer(playerItem: nextVideoPlayerItem)
@@ -262,6 +341,9 @@ class VideoPlayerUIView: UIView {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         checkVisibilityAndUpdatePlayPause()
+        if isInAppSwitcher {
+            pause()
+        }
     }
     override func observeValue(
         forKeyPath keyPath: String?, of object: Any?,
@@ -317,6 +399,10 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.removeObserver(
             self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
+        appStateObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+
     }
     private func removePeriodicTimeObserver() {
         if let token = timeObserverToken {
@@ -338,23 +424,23 @@ class VideoPlayerUIView: UIView {
         }
     }
     private func checkVisibilityAndUpdatePlayPause() {
-        // guard let window = self.window else { return }
-        // let viewFrame = self.convert(self.bounds, to: window)
-        // let screenFrame = window.bounds
+        guard let window = self.window else { return }
+        let viewFrame = self.convert(self.bounds, to: window)
+        let screenFrame = window.bounds
 
-        // let intersection = screenFrame.intersection(viewFrame)
-        // let visibleArea = intersection.width * intersection.height
-        // let totalArea = bounds.width * bounds.height
+        let intersection = screenFrame.intersection(viewFrame)
+        let visibleArea = intersection.width * intersection.height
+        let totalArea = bounds.width * bounds.height
 
-        // let visibilityRatio = visibleArea / max(totalArea, 1)
+        let visibilityRatio = visibleArea / max(totalArea, 1)
 
-        // // If less than 100% visible → pause, else play
-        // if visibilityRatio < 0.99 {
-        //     player.pause()
+        // If less than 100% visible → pause, else play
+        if visibilityRatio < 0.99 {
+            player.pause()
 
-        // } else {
-        //     player.play()
-        // }
+        } else {
+            player.play()
+        }
 
     }
 
