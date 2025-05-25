@@ -336,13 +336,27 @@ class VideoPlayerUIView: UIView {
 
         super.layoutSubviews()
         playerLayer.frame = bounds
-        checkVisibilityAndUpdatePlayPause()
+
+        if isInAppSwitcher {
+            pause()
+        } else {
+            if isViewVisible() {
+                play()
+            } else {
+                pause()
+            }
+        }
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        checkVisibilityAndUpdatePlayPause()
         if isInAppSwitcher {
             pause()
+        } else {
+            if isViewVisible() {
+                play()
+            } else {
+                pause()
+            }
         }
     }
     override func observeValue(
@@ -424,23 +438,23 @@ class VideoPlayerUIView: UIView {
         }
     }
     private func checkVisibilityAndUpdatePlayPause() {
-        guard let window = self.window else { return }
-        let viewFrame = self.convert(self.bounds, to: window)
-        let screenFrame = window.bounds
+        // guard let window = self.window else { return }
+        // let viewFrame = self.convert(self.bounds, to: window)
+        // let screenFrame = window.bounds
 
-        let intersection = screenFrame.intersection(viewFrame)
-        let visibleArea = intersection.width * intersection.height
-        let totalArea = bounds.width * bounds.height
+        // let intersection = screenFrame.intersection(viewFrame)
+        // let visibleArea = intersection.width * intersection.height
+        // let totalArea = bounds.width * bounds.height
 
-        let visibilityRatio = visibleArea / max(totalArea, 1)
+        // let visibilityRatio = visibleArea / max(totalArea, 1)
 
-        // If less than 100% visible → pause, else play
-        if visibilityRatio < 0.99 {
-            player.pause()
+        // // If less than 100% visible → pause, else play
+        // if visibilityRatio < 0.99 {
+        //     player.pause()
 
-        } else {
-            player.play()
-        }
+        // } else {
+        //     player.play()
+        // }
 
     }
 
