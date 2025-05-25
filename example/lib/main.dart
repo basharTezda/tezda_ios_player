@@ -51,28 +51,27 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final nextVideo = videos[index + 1];
           // preloadImage(generateThumbnailUrl(nextVideo), context);
           final videoUrl =  videos.reversed.toList()[index];
-          return Stack(
+          return Column(
             children: [
-              NativeVideoWidget(
-                url: videoUrl,
-                preloadUrl: videos.reversed.toList(),
-                shouldMute: false,
-                isLandscape: false,
-                // placeholder: Image.network(
-                //   generateThumbnailUrl(videoUrl),
-                //   fit: BoxFit.cover,
-                //   width: MediaQuery.of(context).size.width,
-                //   height: MediaQuery.of(context).size.height,
-                // ),
-                onDoubleTapDown: (d) {
-                  log("double tapped");
-                },
+              Container(height: .1,color: Colors.transparent,),
+              Expanded(
+                child: NativeVideoWidget(
+                  url: videoUrl,
+                  preloadUrl: videos.reversed.toList(),
+                  shouldMute: false,
+                  isLandscape: false,
+                  // placeholder: Image.network(
+                  //   generateThumbnailUrl(videoUrl),
+                  //   fit: BoxFit.cover,
+                  //   width: MediaQuery.of(context).size.width,
+                  //   height: MediaQuery.of(context).size.height,
+                  // ),
+                  onDoubleTapDown: (d) {
+                    log("double tapped");
+                  },
+                ),
               ),
-              Positioned(
-                bottom: 40,
-                left: -20,
-                child: NativeVideoSlider(),
-              ),
+            Container(height: 50,color: Colors.transparent,)
             ],
           );
         },
