@@ -10,7 +10,7 @@ class VideoPlatformView: NSObject, FlutterPlatformView {
         var url: URL = staticUrl
         var isMuted: Bool = false
         var isLandScape: Bool = false
-        var preLoad: URL = staticUrl
+        var preLoad: [String]!
         
         if let dict = args as? [String: Any] {
             // Validate main URL
@@ -22,12 +22,9 @@ class VideoPlatformView: NSObject, FlutterPlatformView {
             }
             
             // Validate preload URL
-            if let preLoadStr = dict["preLoadUrl"] as? String,
-               let validatedPreload = VideoPlatformView.validateURL(preLoadStr) {
-                preLoad = validatedPreload
-            } else {
-                print("Invalid preload URL, using main URL as fallback")
-                preLoad = url
+            if let preLoadStr = dict["preLoadUrls"] as? [String]
+               {
+                preLoad = preLoadStr
             }
             
             // Get other parameters
@@ -40,7 +37,7 @@ class VideoPlatformView: NSObject, FlutterPlatformView {
             videoURL: url,
             isMuted: isMuted,
             isLandScape: isLandScape,
-            nextVideo: preLoad
+            nextVideos: preLoad ?? []
         )
         
         super.init()

@@ -1,12 +1,9 @@
 import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:tezda_ios_player/tezda_ios_player.dart';
 import 'const.dart';
 
-void main() {
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
@@ -51,31 +48,30 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
         itemCount: videos.length,
         itemBuilder: (context, index) {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
-          final nextVideo = videos[index + 1];
-          preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl =false?"https://media.tezda.com/video/6823150f5ef2e8e5685cbf41.mp4": videos.toList()[index];
-          return Stack(
+          // final nextVideo = videos[index + 1];
+          // preloadImage(generateThumbnailUrl(nextVideo), context);
+          final videoUrl =  videos.reversed.toList()[index];
+          return Column(
             children: [
-              NativeVideoWidget(
-                url: videoUrl,
-                preloadUrl: nextVideo,
-                shouldMute: false,
-                isLandscape: false,
-                placeholder: Image.network(
-                  generateThumbnailUrl(videoUrl),
-                  fit: BoxFit.cover,
-                  width: MediaQuery.of(context).size.width,
-                  height: MediaQuery.of(context).size.height,
+              Container(height: .1,color: Colors.transparent,),
+              Expanded(
+                child: NativeVideoWidget(
+                  url: videoUrl,
+                  preloadUrl: videos.reversed.toList(),
+                  shouldMute: false,
+                  isLandscape: false,
+                  // placeholder: Image.network(
+                  //   generateThumbnailUrl(videoUrl),
+                  //   fit: BoxFit.cover,
+                  //   width: MediaQuery.of(context).size.width,
+                  //   height: MediaQuery.of(context).size.height,
+                  // ),
+                  onDoubleTapDown: (d) {
+                    log("double tapped");
+                  },
                 ),
-                onDoubleTapDown: (d) {
-                  log("double tapped");
-                },
               ),
-
-              Positioned(
-                bottom: 40,left: -20,
-                child: NativeVideoSlider(),
-              ),
+            Container(height: 50,color: Colors.transparent,)
             ],
           );
         },

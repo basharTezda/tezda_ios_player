@@ -29,11 +29,17 @@ class VideoPlayerUIView: UIView {
     private var timeObserverToken: Any?
     private var url: URL!
     private var nextVideoUrl: URL!
-    private var nextVideoPlayerItem: CachingPlayerItem?
+    private var nextVideoPlayerItems: [CachingPlayerItem] = []
+    private var appStateObservers = [NSObjectProtocol]()
+    private var isInAppSwitcher = false
+    private var progressSlider: UISlider!
+    private var isSliding = false
+    private var bufferProgressView: UIProgressView!
+    private var isUserSliding = false
+    private var isProgrammaticUpdate = false
 
-    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideo: URL) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
         url = videoURL
-        nextVideoUrl = nextVideo
         super.init(frame: frame)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
@@ -49,18 +55,18 @@ class VideoPlayerUIView: UIView {
             playerItem = AVPlayerItem(asset: cachedAsset)
             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
         } else {
-            if !isConnectedToNetwork() {
-                let eventData: [String: Any] = [
-                    "message": "No network connection and no cached video found."
+            // if !isConnectedToNetwork() {
+            //     let eventData: [String: Any] = [
+            //         "message": "No network connection and no cached video found."
 
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"),
-                    object: "No network connection and no cached video found.")
-                playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
-                initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-                return
-            }
+            //     ]
+            //     NotificationCenter.default.post(
+            //         name: Notification.Name("VideoDurationUpdate"),
+            //         object: "No network connection and no cached video found.")
+            //     playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
+            //     initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+            //     return
+            // }
 
             if player == nil {
                 playerItem = CachingPlayerItem(url: videoURL)
@@ -68,22 +74,254 @@ class VideoPlayerUIView: UIView {
                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
             }
         }
-        cacheNextVideoIfNeeded()
+        setupAppStateObservers()
+        setupAppSwitcherObservers()
+        setupProgressSlider()
+        setupGestureRecognizers()
+
+        self.cacheVideoUrls(urls: nextVideos) { FlutterResult in
+            // let eventData: [String: Any] = [
+            //     "message": "Result \(FlutterResult)"
+
+            // ]
+            // NotificationCenter.default.post(
+            //     name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        }
+
     }
-    private func cacheNextVideoIfNeeded() {
+    private func setupProgressSlider() {
+        progressSlider = UISlider()
+        progressSlider.translatesAutoresizingMaskIntoConstraints = false
+        progressSlider.minimumValue = 0
+        progressSlider.maximumValue = 1
+        progressSlider.value = 0
+        progressSlider.minimumTrackTintColor = .red
+        progressSlider.maximumTrackTintColor = .clear
+        progressSlider.thumbTintColor = .white
+        
+        // Make thumb visible and interactive
+//        progressSlider.setThumbImage(UIImage(systemName: "circle.fill"), for: .normal)
+//        progressSlider.setThumbImage(UIImage(systemName: "circle.fill"), for: .highlighted)
+//        
+        // Add targets
+        progressSlider.addTarget(self, action: #selector(sliderValueChanged(_:)), for: .valueChanged)
+        progressSlider.addTarget(self, action: #selector(sliderTouchDown(_:)), for: .touchDown)
+        progressSlider.addTarget(self, action: #selector(sliderTouchUp(_:)), for: [.touchUpInside, .touchUpOutside])
+        
+        addSubview(progressSlider)
+        
+        // Constraints
+        NSLayoutConstraint.activate([
+            progressSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
+            progressSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
+            progressSlider.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+            progressSlider.heightAnchor.constraint(equalToConstant: 30)
+        ])
+        
+        // Buffer progress view
+        bufferProgressView = UIProgressView()
+        bufferProgressView.translatesAutoresizingMaskIntoConstraints = false
+        bufferProgressView.progressTintColor = UIColor.lightGray.withAlphaComponent(0.3)
+        bufferProgressView.trackTintColor = .clear
+        insertSubview(bufferProgressView, belowSubview: progressSlider)
+        
+        NSLayoutConstraint.activate([
+            bufferProgressView.leadingAnchor.constraint(equalTo: progressSlider.leadingAnchor),
+            bufferProgressView.trailingAnchor.constraint(equalTo: progressSlider.trailingAnchor),
+            bufferProgressView.centerYAnchor.constraint(equalTo: progressSlider.centerYAnchor),
+            bufferProgressView.heightAnchor.constraint(equalToConstant: 2)
+        ])
+    }
+    @objc private func sliderTouchDown(_ sender: UISlider) {
+        isUserSliding = true
+        player.pause()
+    }
+
+    @objc private func sliderValueChanged(_ sender: UISlider) {
+        guard !isProgrammaticUpdate else { return }
+        
+        if isUserSliding {
+            // Example: Apply some transformation to the value
+            let transformedValue = transformSliderValue(sender.value)
+            
+            if transformedValue != sender.value {
+                isProgrammaticUpdate = true
+                sender.value = transformedValue
+                isProgrammaticUpdate = false
+            }
+            
+            // Update some visual indicator
+            updateTimeLabel(for: sender.value)
+        }
+    }
+
+    @objc private func sliderTouchUp(_ sender: UISlider) {
+        isUserSliding = false
+        seekToCurrentSliderPosition(sender)
+    }
+
+    private func transformSliderValue(_ value: Float) -> Float {
+        // Example: Apply logarithmic scaling
+        return log10f(value * 9 + 1) // Maps 0...1 to 0...1 with log curve
+    }
+
+    private func updateTimeLabel(for value: Float) {
+        guard let duration = player.currentItem?.duration.seconds,
+              duration.isFinite, duration > 0 else { return }
+        
+        let time = Double(value) * duration
+//        timeLabel.text = formatTime(time)
+    }
+
+    private func seekToCurrentSliderPosition(_ sender: UISlider) {
+        guard let duration = player.currentItem?.duration.seconds,
+              duration.isFinite, duration > 0 else { return }
+        
+        let targetTime = Double(sender.value) * duration 
+        let seekTime = CMTime(seconds: targetTime, preferredTimescale: 1000)
+        
+        player.seek(to: seekTime) { [weak self] _ in
+            self?.player.play()
+        }
+    }
+
+    private func setupGestureRecognizers() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tapGesture.numberOfTapsRequired = 1
+        addGestureRecognizer(tapGesture)
+        
+        // Make sure user interaction is enabled
+        isUserInteractionEnabled = true
+    }
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        
+        if player.timeControlStatus == .playing {
+            pause()
+        } else {
+            play()
+        }
+        
+  
+    }
+
+    private func setupAppStateObservers() {
+        // Observe app going to background
+        let backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.pause()
+            let eventData: [String: Any] = [
+                "message": " app in background"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        }
+
+        // Observe app coming to foreground
+        let foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            let eventData: [String: Any] = [
+                "message": " app in foreground"
+
+            ]
+            NotificationCenter.default.post(
+                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            if self?.isViewVisible() == true {
+                self?.play()
+            }
+        }
+
+        appStateObservers.append(contentsOf: [backgroundObserver, foregroundObserver])
+    }
+    private func setupAppSwitcherObservers() {
+        // Observe when app enters app switcher
+        let willResignObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInAppSwitcher = true
+            self?.pause()
+        }
+
+        // Observe when app returns from app switcher
+        let didBecomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.isInAppSwitcher = false
+            if self?.isViewVisible() == true {
+                self?.play()
+            }
+        }
+
+        appStateObservers.append(contentsOf: [willResignObserver, didBecomeActiveObserver])
+    }
+    private func isViewVisible() -> Bool {
+        guard !isInAppSwitcher else { return false }
+        guard let window = self.window else { return false }
+        let viewFrame = self.convert(self.bounds, to: window)
+        let screenFrame = window.bounds
+
+        let intersection = screenFrame.intersection(viewFrame)
+        let visibleArea = intersection.width * intersection.height
+        let totalArea = bounds.width * bounds.height
+
+        let visibilityRatio = visibleArea / max(totalArea, 1)
+        return visibilityRatio >= 0.99
+    }
+    public func cacheVideoUrls(urls: [String], result: @escaping FlutterResult) {
+
+        DispatchQueue.global(qos: .utility).async {
+
+            let group = DispatchGroup()
+            for urlString in urls {
+
+                guard let urlo = URL(string: urlString) else {
+
+                    continue
+
+                }
+                group.enter()
+
+                self.cacheNextVideoIfNeeded(url: urlo) {
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                result(true)
+            }
+        }
+    }
+    private func cacheNextVideoIfNeeded(url: URL, completion: @escaping () -> Void) {
         // Check if we already have this video cached
-        if self.asset(for: nextVideoUrl) != nil {
+        if self.asset(for: url) != nil {
+            completion()
             return
         }
 
         // Only cache if we have network connection
         guard isConnectedToNetwork() else {
+            completion()
             return
         }
+        let eventData: [String: Any] = [
+            "message": "trying to cache \(url.absoluteString)"
 
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
         // Create and prepare the next video player item for caching
-        nextVideoPlayerItem = CachingPlayerItem(url: nextVideoUrl)
-        nextVideoPlayerItem?.delegate = self
+        let nextVideoPlayerItem = CachingPlayerItem(url: url)
+        nextVideoPlayerItem.delegate = self
 
         // We don't actually need to play it, just prepare it for caching
         let tempPlayer = AVPlayer(playerItem: nextVideoPlayerItem)
@@ -92,11 +330,12 @@ class VideoPlayerUIView: UIView {
 
         // Set rate to 0.1 to start loading but not actually play
         tempPlayer.rate = 0.1
-
+        nextVideoPlayerItems.append(nextVideoPlayerItem)
         // After a short delay, pause it to prevent unnecessary bandwidth usage
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             tempPlayer.rate = 0
         }
+        completion()
     }
     private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
         player = AVPlayer(playerItem: playerItem)
@@ -145,31 +384,48 @@ class VideoPlayerUIView: UIView {
             name: NSNotification.Name("ToggleMute"), object: nil)
     }
     private func addPeriodicTimeObserver() {
-        // Add periodic time observer for updating video duration and current time
-        let interval = CMTime(seconds: 1, preferredTimescale: 1)
-
+        removePeriodicTimeObserver()
+        
+        // Update interval to 1 millisecond (1/1000 of a second)
+        let interval = CMTime(
+            value: 1,          // 1 unit of the timescale
+            timescale: 1000    // 1000 units per second = milliseconds
+        )
+        
         timeObserverToken = player.addPeriodicTimeObserver(
-            forInterval: interval, queue: DispatchQueue.main
+            forInterval: interval,
+            queue: DispatchQueue.main
         ) { [weak self] time in
-            self?.sendVideoDuration(
-                currentTime: time.seconds, duration: self?.player.currentItem?.duration.seconds ?? 0
-            )
+            guard let self = self else { return }
+            
+            let currentTime = time.seconds
+            let duration = self.player.currentItem?.duration.seconds ?? 0
+            
+            // Only update slider if user isn't interacting with it
+            if !self.isSliding && duration > 0 {
+                self.progressSlider.value = Float(currentTime / duration)
+            }
+            
+//            self.sendVideoDuration(currentTime: currentTime, duration: duration)
         }
     }
 
-    @objc private func sendVideoDuration(currentTime: Double, duration: Double) {
-        // Prepare the event data and send it to Flutter
-        let eventData: [String: Any] = [
-            "currentTime": currentTime,
-            "duration": duration,
-        ]
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleSeekToNotification(_:)),
-            name: Notification.Name("SeekToTimeNotification"), object: nil)
-
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
-    }
+//    @objc private func sendVideoDuration(currentTime: Double, duration: Double) {
+//        if !isSliding && duration > 0 {
+//            progressSlider.value = Float(currentTime / duration)
+//        }
+//        // Prepare the event data and send it to Flutter
+//        let eventData: [String: Any] = [
+//            "currentTime": currentTime,
+//            "duration": duration,
+//        ]
+//        NotificationCenter.default.addObserver(
+//            self, selector: #selector(handleSeekToNotification(_:)),
+//            name: Notification.Name("SeekToTimeNotification"), object: nil)
+//
+//        NotificationCenter.default.post(
+//            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//    }
     @objc private func loopVideo() {
         player.seek(to: .zero)
         player.play()
@@ -218,11 +474,29 @@ class VideoPlayerUIView: UIView {
 
         super.layoutSubviews()
         playerLayer.frame = bounds
-        checkVisibilityAndUpdatePlayPause()
+        bringSubviewToFront(progressSlider)
+
+        if isInAppSwitcher {
+            pause()
+        } else {
+            if isViewVisible() {
+                play()
+            } else {
+                pause()
+            }
+        }
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        checkVisibilityAndUpdatePlayPause()
+        if isInAppSwitcher {
+            pause()
+        } else {
+            if isViewVisible() {
+                play()
+            } else {
+                pause()
+            }
+        }
     }
     override func observeValue(
         forKeyPath keyPath: String?, of object: Any?,
@@ -246,6 +520,10 @@ class VideoPlayerUIView: UIView {
             if let currentItem = player.currentItem {
                 let bufferedTime =
                     currentItem.loadedTimeRanges.first?.timeRangeValue.duration.seconds ?? 0
+                let duration = currentItem.duration.seconds
+                if duration > 0 {
+                    bufferProgressView.progress = Float(bufferedTime / duration)
+                }
                 let eventData: [String: Any] = [
                     "buffering": bufferedTime
 
@@ -278,6 +556,10 @@ class VideoPlayerUIView: UIView {
         NotificationCenter.default.removeObserver(
             self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
+        appStateObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+
     }
     private func removePeriodicTimeObserver() {
         if let token = timeObserverToken {
@@ -298,38 +580,19 @@ class VideoPlayerUIView: UIView {
             }
         }
     }
-    private func checkVisibilityAndUpdatePlayPause() {
-        // guard let window = self.window else { return }
-        // let viewFrame = self.convert(self.bounds, to: window)
-        // let screenFrame = window.bounds
-
-        // let intersection = screenFrame.intersection(viewFrame)
-        // let visibleArea = intersection.width * intersection.height
-        // let totalArea = bounds.width * bounds.height
-
-        // let visibilityRatio = visibleArea / max(totalArea, 1)
-
-        // // If less than 100% visible → pause, else play
-        // if visibilityRatio < 0.99 {
-        //     player.pause()
-
-        // } else {
-        //     player.play()
-        // }
-
-    }
 
 }
 
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        let urlToCache = (playerItem == nextVideoPlayerItem) ? nextVideoUrl : url
+        let isPlayerItemInNextItems = nextVideoPlayerItems.contains { $0 == playerItem }
+        let urlToCache = isPlayerItemInNextItems ? playerItem.url : url
         self.save(data: data, for: urlToCache!)
 
         let eventData: [String: Any] = [
             "message": "Video downloaded successfully.",
-            "isNextVideo": playerItem == nextVideoPlayerItem,
+            "isNextVideo": isPlayerItemInNextItems,
         ]
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"),
