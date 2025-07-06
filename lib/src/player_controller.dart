@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert' show jsonDecode;
 import 'dart:developer';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class NativeVideoController {
@@ -15,8 +16,11 @@ class NativeVideoController {
   static Duration duration = Duration(microseconds: 1);
   static Duration buffered = Duration(microseconds: 0);
   static bool isPlaying = false;
+  static bool isBuffering = false;
   static bool isReady = false;
   static bool isFinished = false;
+  final List<String> _cachedUrls = [];
+  final int _maxCacheSize = 5;
   // Stream to listen for updates from the native side
   static Stream<Map> onUpdateStream =
       _eventChannel.receiveBroadcastStream().map((data) {
@@ -26,6 +30,10 @@ class NativeVideoController {
     }
     if (event['isPlaying'] != null) {
       isPlaying = event['isPlaying'];
+    }
+    if (event['isBuffering'] != null) {
+      isBuffering = event['isBuffering'];
+     
     }
     if (event['currentTime'] != null) {
       currentTime = setUpMicro(event['currentTime']);
@@ -42,8 +50,32 @@ class NativeVideoController {
         !isFinished) {
       isFinished = true;
     }
+    if (event['message'] != null) {
+      log(event.toString());
+    }
+
     return event;
   });
+
+  Future<void> preCacheVideos(List<String> urls) async {
+    try {
+      // Keep only the last X videos to prevent excessive caching
+      // if (_cachedUrls.length > _maxCacheSize) {
+      //   final urlsToRemove = _cachedUrls.sublist(0, _cachedUrls.length - _maxCacheSize);
+      //   await _channel.invokeMethod('removeCachedVideos', {'urls': urlsToRemove});
+      //   _cachedUrls.removeWhere((url) => urlsToRemove.contains(url));
+      // }
+
+      // Cache new videos
+      final newUrls = urls.where((url) => !_cachedUrls.contains(url)).toList();
+      if (newUrls.isNotEmpty) {
+        await _channel.invokeMethod('cacheVideoList', {'urls': newUrls});
+        _cachedUrls.addAll(newUrls);
+      }
+    } catch (e) {
+      debugPrint('Error caching videos: $e');
+    }
+  }
 
   Future<void> togglePlayPause() async {
     await _channel.invokeMethod('togglePlay');
