@@ -16,6 +16,7 @@ class NativeVideoController {
   static Duration duration = Duration(microseconds: 1);
   static Duration buffered = Duration(microseconds: 0);
   static bool isPlaying = false;
+  static bool isBuffering = false;
   static bool isReady = false;
   static bool isFinished = false;
   final List<String> _cachedUrls = [];
@@ -29,6 +30,10 @@ class NativeVideoController {
     }
     if (event['isPlaying'] != null) {
       isPlaying = event['isPlaying'];
+    }
+    if (event['isBuffering'] != null) {
+      isBuffering = event['isBuffering'];
+     
     }
     if (event['currentTime'] != null) {
       currentTime = setUpMicro(event['currentTime']);
@@ -46,7 +51,7 @@ class NativeVideoController {
       isFinished = true;
     }
     if (event['message'] != null) {
-      log(event .toString());
+      log(event.toString());
     }
 
     return event;

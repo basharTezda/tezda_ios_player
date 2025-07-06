@@ -37,7 +37,9 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   @override
   void initState() {
     NativeVideoController.onUpdateStream.listen(
-      (event) => mounted ? setState(() {}) : null,
+      (event) => mounted ? setState(() {
+        
+      }) : null,
     );
     super.initState();
   }

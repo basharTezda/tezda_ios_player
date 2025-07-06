@@ -28,18 +28,15 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
 
   @override
   void initState() {
-    NativeVideoController.onUpdateStream.listen((onData) {
-      // if (NativeVideoController.isFinished) {
-      //   print(NativeVideoController.isFinished);
-      // }
-    });
+
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: PageView.builder(
+      body: 
+      PageView.builder(
         onPageChanged: (value) {
           NativeVideoController.reset();
           setState(() {});
@@ -76,6 +73,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           );
         },
       ),
+    
     );
   }
 }
