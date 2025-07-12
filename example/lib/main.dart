@@ -65,7 +65,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
                   // ),
                   onDoubleTapDown: (d) {
                     log("double tapped");
-                  },
+                  }, shouldShow: true,
                 ),
               ),
             Container(height: 50,color: Colors.transparent,)

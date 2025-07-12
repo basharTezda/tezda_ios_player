@@ -38,6 +38,7 @@ class NativeVideoWidget extends StatefulWidget {
 class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   @override
   void initState() {
+    log(widget.url,name: "NativeVideoWidget");
     NativeVideoController.onUpdateStream.listen(
       (event) => mounted ? setState(() {}) : null,
     );
@@ -70,6 +71,6 @@ List<String> takeOnlyFive(
   final fixedList = list.toList();
   fixedList.removeWhere((item) => cached.contains(item));
   List<String> firstFive =
-      fixedList.length > 5 ? fixedList.sublist(0, 5) : fixedList;
+      fixedList.length > 2 ? fixedList.sublist(0, 2) : fixedList;
   return firstFive;
 }

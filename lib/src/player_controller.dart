@@ -20,7 +20,7 @@ class NativeVideoController {
   static bool isReady = false;
   static bool isFinished = false;
   final List<String> _cachedUrls = [];
-  final int _maxCacheSize = 5;
+  final int _maxCacheSize = 2;
   // Stream to listen for updates from the native side
   static Stream<Map> onUpdateStream =
       _eventChannel.receiveBroadcastStream().map((data) {

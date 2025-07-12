@@ -3,7 +3,7 @@ import Cache
 import Flutter
 import SystemConfiguration
 import UIKit
-
+var activeCachingOperations: [URL: Bool] = [:]
 func isConnectedToNetwork() -> Bool {
     let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
     var flags = SCNetworkReachabilityFlags()
@@ -37,9 +37,14 @@ class VideoPlayerUIView: UIView {
     private var bufferProgressView: UIProgressView!
     private var isUserSliding = false
     private var isProgrammaticUpdate = false
+    private var bufferingIndicator: UIActivityIndicatorView!
+    private var preCachingList: [String] = []
+    private var resumeWorkItem: DispatchWorkItem?
+
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
         url = videoURL
+        preCachingList = nextVideos
         super.init(frame: frame)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
@@ -75,16 +80,10 @@ class VideoPlayerUIView: UIView {
         setupAppStateObservers()
         setupAppSwitcherObservers()
         setupProgressSlider()
-//        setupGestureRecognizers()
+          setupBufferingIndicator()
+        setupGestureRecognizers()
 
-        self.cacheVideoUrls(urls: nextVideos) { FlutterResult in
-            // let eventData: [String: Any] = [
-            //     "message": "Result \(FlutterResult)"
-
-            // ]
-            // NotificationCenter.default.post(
-            //     name: Notification.Name("VideoDurationUpdate"), object: eventData)
-        }
+     
 
     }
         private func cleanupPlayer() {
@@ -98,6 +97,7 @@ class VideoPlayerUIView: UIView {
             currentItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
             currentItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
             currentItem.removeObserver(self, forKeyPath: "presentationSize")
+            currentItem.removeObserver(self, forKeyPath: "isPlaybackBufferFull")
             
             NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: currentItem)
         }
@@ -126,7 +126,23 @@ class VideoPlayerUIView: UIView {
                     name: Notification.Name("VideoDurationUpdate"), object: eventData)
     }
     
-
+private func setupBufferingIndicator() {
+    if #available(iOS 13.0, *) {
+        bufferingIndicator = UIActivityIndicatorView(style: .large)
+    } else {
+        // For iOS 12 and earlier, use .whiteLarge which has been available since iOS 2.0
+        bufferingIndicator = UIActivityIndicatorView(style: .whiteLarge)
+    }
+    bufferingIndicator.color = .white
+    bufferingIndicator.translatesAutoresizingMaskIntoConstraints = false
+    bufferingIndicator.hidesWhenStopped = true
+    addSubview(bufferingIndicator)
+    
+    NSLayoutConstraint.activate([
+        bufferingIndicator.centerXAnchor.constraint(equalTo: centerXAnchor),
+        bufferingIndicator.centerYAnchor.constraint(equalTo: centerYAnchor)
+    ])
+}
     private func setupProgressSlider() {
         progressSlider = UISlider()
         progressSlider.translatesAutoresizingMaskIntoConstraints = false
@@ -226,25 +242,25 @@ class VideoPlayerUIView: UIView {
         }
     }
 
-//    private func setupGestureRecognizers() {
-//        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-//        tapGesture.numberOfTapsRequired = 1
-//        addGestureRecognizer(tapGesture)
-//        
-//        // Make sure user interaction is enabled
-//        isUserInteractionEnabled = true
-//    }
-//    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-//        guard gesture.state == .ended else { return }
-//        
-//        if player.timeControlStatus == .playing {
-//            pause()
-//        } else {
-//            play()
-//        }
-//        
-//  
-//    }
+    private func setupGestureRecognizers() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tapGesture.numberOfTapsRequired = 1
+        addGestureRecognizer(tapGesture)
+        
+        // Make sure user interaction is enabled
+        isUserInteractionEnabled = true
+    }
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        
+        if player.timeControlStatus == .playing {
+            pause()
+        } else {
+            play()
+        }
+        
+  
+    }
 
     private func setupAppStateObservers() {
         // Observe app going to background
@@ -347,7 +363,7 @@ class VideoPlayerUIView: UIView {
 }
     }
     private func cacheNextVideoIfNeeded(url: URL, completion: @escaping () -> Void) {
-        // Check if we already have this video cached
+        // Check cache first
         if self.asset(for: url) != nil {
             completion()
             return
@@ -358,13 +374,13 @@ class VideoPlayerUIView: UIView {
             completion()
             return
         }
-//        let eventData: [String: Any] = [
-//            "message": "trying to cache \(url.absoluteString)"
-//
-//        ]
-//        NotificationCenter.default.post(
-//            name: Notification.Name("VideoDurationUpdate"), object: eventData)
-        // Create and prepare the next video player item for caching
+        if activeCachingOperations[url] == true {
+            completion() // Already in progress
+            return
+        }
+        
+        // Mark as being cached
+        activeCachingOperations[url] = true
         let nextVideoPlayerItem = CachingPlayerItem(url: url)
         nextVideoPlayerItem.delegate = self
 
@@ -408,6 +424,9 @@ class VideoPlayerUIView: UIView {
             self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
         player.currentItem?.addObserver(
             self, forKeyPath: "presentationSize", options: [.new], context: nil)
+        player.currentItem?.addObserver(
+            self, forKeyPath: "isPlaybackBufferFull", options: [.new], context: nil)
+     
         addPeriodicTimeObserver()
 
         // Looping
@@ -591,6 +610,9 @@ class VideoPlayerUIView: UIView {
 
             }
          case "playbackBufferEmpty":
+            DispatchQueue.main.async {
+            self.bufferingIndicator.startAnimating()
+        }
             let eventData: [String: Any] = [
                 "message": "Buffering started ",
                 "isBuffering": true
@@ -598,7 +620,28 @@ class VideoPlayerUIView: UIView {
             NotificationCenter.default.post(
                 name: Notification.Name("VideoDurationUpdate"), object: eventData)
          case "playbackLikelyToKeepUp":
-            
+    
+            DispatchQueue.main.async {
+               
+                 
+                 // Cancel any pending resume
+                 self.resumeWorkItem?.cancel()
+                 
+                 // Create new work item
+                 let workItem = DispatchWorkItem { [weak self] in
+                     guard let self = self else { return }
+                     if self.player.timeControlStatus != .playing {
+                         self.bufferingIndicator.stopAnimating()
+                         self.player.play()
+                     }
+                 }
+                 
+                 self.resumeWorkItem = workItem
+                 DispatchQueue.main.asyncAfter(
+                     deadline: .now() + 4.0,
+                     execute: workItem
+                 )
+             }
             let eventData: [String: Any] = [
                 "message": "Buffering complete. Resuming playback.",
                 "isBuffering": false
@@ -606,6 +649,15 @@ class VideoPlayerUIView: UIView {
             
             NotificationCenter.default.post(
                 name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            
+        case "isPlaybackBufferFull":
+            // Another opportunity to resume playback
+            DispatchQueue.main.async {
+                self.bufferingIndicator.stopAnimating()
+                if self.player.timeControlStatus != .playing {
+                    self.player.play()
+                }
+            }
         // case "presentationSize":
         //     let size = item.presentationSize
         //     let isLandscape = size.width > size.height
@@ -681,7 +733,8 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
         let isPlayerItemInNextItems = nextVideoPlayerItems.contains { $0 == playerItem }
         let urlToCache = isPlayerItemInNextItems ? playerItem.url : url
-        self.save(data: data, for: urlToCache!)
+        print("start saving")
+        self.cacheVideo(from: urlToCache!,videoData: data)
 
         let eventData: [String: Any] = [
             "message": "Video downloaded successfully.",
@@ -690,16 +743,27 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"),
             object: eventData)
-    }
+        print("\(eventData)")
+        self.cacheVideoUrls(urls: self.preCachingList) { FlutterResult in
 
+        }
+
+    }
     func playerItem(
         _ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int,
         outOf bytesExpected: Int
     ) {
-
+        let downloadedMB = Double(bytesDownloaded) / (1024 * 1024)
+        let expectedMB = Double(bytesExpected) / (1024 * 1024)
+        
+        print(String(format: "Downloaded: %.2f MB of %.2f MB", downloadedMB, expectedMB))
+        
     }
 
     func playerItemPlaybackStalled(_ playerItem: CachingPlayerItem) {
+            DispatchQueue.main.async {
+        self.bufferingIndicator.startAnimating()
+    }
         let eventData: [String: Any] = [
             "message": "Not enough data for playback. Probably because of the poor network. Wait a bit and try to play later.",
             "isBuffering": true
@@ -721,31 +785,36 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
         ]
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        print("\(eventData)")
 
     }
 
 }
 extension VideoPlayerUIView {
 
-    func cacheVideo(from url: URL) {
+    func cacheVideo(from url: URL, videoData: Data) {
         // Attempt to load the video data
-        guard let videoData = try? Data(contentsOf: url) else {
-            let eventData: [String: Any] = [
-                "message": "Failed to load video data from URL."
-
-            ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
-            return
-        }
+//        print("Caching video...0")
+//        guard let videoData = try? Data(contentsOf: url) else {
+//            let eventData: [String: Any] = [
+//                "message": "Failed to load video data from URL."
+//
+//            ]
+//            NotificationCenter.default.post(
+//                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//            return
+//        }
 
         // Save the video data to disk cache
+        print("Caching video...1")
         let cacheURL = getCacheURL(for: url)
+        print("Caching video...2")
         do {
             try storage?.setObject(videoData, forKey: url.absoluteString)
             if let cachedData = try? storage?.object(forKey: url.absoluteString),
                 cachedData == videoData
             {
+                print("Caching video...3")
                 let eventData: [String: Any] = [
                     "message": "Video cached successfully."
 
@@ -809,9 +878,7 @@ extension VideoPlayerUIView {
         return nil
     }
 
-    func save(data: Data, for url: URL) {
-        cacheVideo(from: url)
-    }
+ 
 
     private func getCacheURL(for url: URL) -> URL {
         // Define the cache directory and the file name based on the URL's absolute string
