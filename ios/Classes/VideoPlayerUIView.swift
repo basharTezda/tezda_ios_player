@@ -37,10 +37,26 @@ class VideoPlayerUIView: UIView {
     private var bufferProgressView: UIProgressView!
     private var isUserSliding = false
     private var isProgrammaticUpdate = false
+    private var channel: FlutterMethodChannel
+    private var eventChannel: FlutterEventChannel
+    private var eventSink: FlutterEventSink?
 
-    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
+    init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String],   binaryMessenger messenger: FlutterBinaryMessenger) {
         url = videoURL
-        super.init(frame: frame)
+        channel = FlutterMethodChannel(
+                   name: "native_video_player_channel_\(videoURL)",
+                   binaryMessenger: messenger)
+                   
+               eventChannel = FlutterEventChannel(
+                   name: "native_video_player_event_\(videoURL)",
+                   binaryMessenger: messenger)
+        super.init(frame: frame )
+        channel.setMethodCallHandler { [weak self] call, result in
+                 self?.handleMethodCall(call, result: result)
+             }
+             
+             // Set up event channel
+             eventChannel.setStreamHandler(self)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
             // Valid URL
@@ -122,11 +138,25 @@ class VideoPlayerUIView: UIView {
                     "cleaning": "Player cleaned up successfully."
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            sendEvent(eventData)
     }
     
-
+    func handleMethodCall(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "togglePlay":
+            togglePlayPause()
+            result(nil)
+        case "play":
+            play()
+            result(nil)
+        case "pause":
+            pause()
+            result(nil)
+        // ... handle other methods
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
     private func setupProgressSlider() {
         progressSlider = UISlider()
         progressSlider.translatesAutoresizingMaskIntoConstraints = false
@@ -258,8 +288,7 @@ class VideoPlayerUIView: UIView {
                 "message": " app in background"
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//            self.sendEvent(eventData)
         }
 
         // Observe app coming to foreground
@@ -272,8 +301,7 @@ class VideoPlayerUIView: UIView {
                 "message": " app in foreground"
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//            self.sendEvent(eventData)
             if self?.isViewVisible() == true {
                 self?.play()
             }
@@ -396,8 +424,7 @@ class VideoPlayerUIView: UIView {
             "isPlaying": true
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        sendEvent(eventData)
         if let item = player.currentItem {
             item.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
             item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: nil)
@@ -480,8 +507,7 @@ class VideoPlayerUIView: UIView {
             self, selector: #selector(handleSeekToNotification(_:)),
             name: Notification.Name("SeekToTimeNotification"), object: nil)
 
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        sendEvent(eventData)
     }
     @objc private func loopVideo() {
         player.seek(to: .zero)
@@ -505,8 +531,7 @@ class VideoPlayerUIView: UIView {
                     "isPlaying": true
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                self.sendEvent(eventData)
             }
         }
     }
@@ -518,8 +543,7 @@ class VideoPlayerUIView: UIView {
                     "isPlaying": false
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                self.sendEvent(eventData)
             }
         }
     }
@@ -570,8 +594,7 @@ class VideoPlayerUIView: UIView {
                     "started": true
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                sendEvent(eventData)
 
             }
         case "loadedTimeRanges":
@@ -586,8 +609,7 @@ class VideoPlayerUIView: UIView {
                     "buffering": bufferedTime
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                sendEvent(eventData)
 
             }
          case "playbackBufferEmpty":
@@ -595,8 +617,7 @@ class VideoPlayerUIView: UIView {
                 "message": "Buffering started ",
                 "isBuffering": true
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            sendEvent(eventData)
          case "playbackLikelyToKeepUp":
             
             let eventData: [String: Any] = [
@@ -604,8 +625,7 @@ class VideoPlayerUIView: UIView {
                 "isBuffering": false
             ]
             
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            sendEvent(eventData)
         // case "presentationSize":
         //     let size = item.presentationSize
         //     let isLandscape = size.width > size.height
@@ -687,9 +707,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             "message": "Video downloaded successfully.",
             "isNextVideo": isPlayerItemInNextItems,
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"),
-            object: eventData)
+        sendEvent(eventData)
     }
 
     func playerItem(
@@ -705,10 +723,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             "isBuffering": true
         ]
         
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"),
-            object: eventData
-        )
+        sendEvent(eventData)
         
         // Optionally, you can automatically resume playback when ready
         playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.isPlaybackBufferFull), options: [.new], context: nil)
@@ -719,8 +734,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             "error": error
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        sendEvent(eventData)
 
     }
 
@@ -734,8 +748,7 @@ extension VideoPlayerUIView {
                 "message": "Failed to load video data from URL."
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            sendEvent(eventData)
             return
         }
 
@@ -750,15 +763,14 @@ extension VideoPlayerUIView {
                     "message": "Video cached successfully."
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                sendEvent(eventData)
+        
             } else {
                 let eventData: [String: Any] = [
                     "message": "Failed to cache video data."
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                sendEvent(eventData)
             }
 
         } catch {
@@ -767,8 +779,7 @@ extension VideoPlayerUIView {
                 "message": "Error caching video: \(error)"
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            sendEvent(eventData)
 
         }
     }
@@ -781,8 +792,7 @@ extension VideoPlayerUIView {
             "message": "no cached data found for this \(url.absoluteString)."
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        sendEvent(eventData)
         return nil
     }
 
@@ -804,8 +814,7 @@ extension VideoPlayerUIView {
             "message": "no cached file found for this \(url.absoluteString)."
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        sendEvent(eventData)
         return nil
     }
 
@@ -820,5 +829,26 @@ extension VideoPlayerUIView {
         let cacheURL = cacheDirectory.appendingPathComponent(url.lastPathComponent)
 
         return cacheURL
+    }
+}
+
+extension VideoPlayerUIView: FlutterStreamHandler {
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        self.eventSink = events
+        return nil
+    }
+    
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        eventSink = nil
+        return nil
+    }
+    
+    private func sendEvent(_ event: [String: Any]) {
+        do {
+            let result = try  eventSink?(["event": "\(event)"])
+//            print("Success:", result)
+        } catch {
+//            print("Error:", error)
+        }
     }
 }
