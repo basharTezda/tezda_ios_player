@@ -11,7 +11,7 @@ class VideoViewFactory: NSObject, FlutterPlatformViewFactory {
 
     func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
         
-        return VideoPlatformView(frame: frame, viewIdentifier: viewId, arguments: args)
+        return VideoPlatformView(frame: frame, viewIdentifier: viewId, arguments: args , binaryMessenger: messenger)
     }
 
     func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
