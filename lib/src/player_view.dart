@@ -38,13 +38,13 @@ class NativeVideoWidget extends StatefulWidget {
 class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   @override
   void initState() {
-    NativeVideoController.onUpdateStream.listen(
-      (event) => mounted ? setState(() {}) : null,
-    );
+    // NativeVideoController.onUpdateStream.listen(
+    //   (event) => mounted ? setState(() {}) : null,
+    // );
     super.initState();
   }
 
-  final NativeVideoController controller = NativeVideoController();
+  // final NativeVideoController controller = NativeVideoController(widget.url);
   bool shouldPlayVideo = false;
   @override
   Widget build(BuildContext context) => widget.shouldShow

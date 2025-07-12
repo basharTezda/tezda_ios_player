@@ -24,7 +24,8 @@ class VideoExampleScreen extends StatefulWidget {
 }
 
 class _VideoExampleScreenState extends State<VideoExampleScreen> {
-  final controller = NativeVideoController();
+
+  final controller = NativeVideoController(videos.first);
 
   @override
   void initState() {
@@ -53,6 +54,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
               Container(height: .1,color: Colors.transparent,),
               Expanded(
                 child: NativeVideoWidget(
+                  shouldShow: true,
                   url: videoUrl,
                   preloadUrl: videos.reversed.toList(),
                   shouldMute: false,
