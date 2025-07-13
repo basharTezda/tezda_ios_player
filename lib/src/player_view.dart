@@ -17,6 +17,10 @@ class NativeVideoWidget extends StatefulWidget {
   final Function()? onLongPressStart;
   final Function()? onLongPressEnd;
   final Function(VisibilityInfo)? onVisibilityChanged;
+  final Function()? onDoubleTap;
+  final Function(double)? onFinished;
+  final Function(double)? onDeinit;
+
   final bool shouldShow;
   const NativeVideoWidget(
       {super.key,
@@ -29,18 +33,38 @@ class NativeVideoWidget extends StatefulWidget {
       this.onLongPressStart,
       this.onVisibilityChanged,
       this.onLongPressEnd,
-      required this.shouldShow});
+      required this.shouldShow,
+      this.onDoubleTap,
+      this.onFinished,
+      this.onDeinit});
 
   @override
   State<NativeVideoWidget> createState() => _NativeVideoWidgetState();
 }
 
 class _NativeVideoWidgetState extends State<NativeVideoWidget> {
+  bool _started = false;
   @override
   void initState() {
-    log(widget.url,name: "NativeVideoWidget");
     NativeVideoController.onUpdateStream.listen(
-      (event) => mounted ? setState(() {}) : null,
+      (event) => mounted
+          ? setState(() {
+              if (event['onFinished'] != null && widget.onFinished != null) {
+                widget.onFinished?.call(event['duration']);
+              }
+              if (event['onDeinit'] != null && widget.onDeinit != null) {
+                widget.onDeinit?.call(event['duration']);
+              }
+              if (event['onDoubleTap'] != null && widget.onDoubleTap != null) {
+                widget.onDoubleTap?.call();
+              }
+              if (event["started"] != null) {
+                Future.delayed(Duration(milliseconds: 50), () {
+                  _started = true;
+                });
+              }
+            })
+          : null,
     );
     super.initState();
   }
@@ -48,21 +72,33 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
   // final NativeVideoController controller = NativeVideoController(widget.url);
   bool shouldPlayVideo = false;
   @override
-  Widget build(BuildContext context) => widget.shouldShow
-      ? UiKitView(
-          viewType: 'native_video_player',
-          creationParams: {
-            'url': widget.url,
-            'shouldMute': widget.shouldMute,
-            'isLandscape': widget.isLandscape,
-            "preLoadUrls": takeOnlyFive(
-                removedItem: widget.url, list: widget.preloadUrl ?? []),
-          },
-          creationParamsCodec: const StandardMessageCodec(),
-        )
-      : Container(
-          color: Colors.transparent,
-        );
+  Widget build(BuildContext context) => Column(
+        children: [
+          SizedBox(
+            height: 2,
+          ),
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                UiKitView(
+                  onPlatformViewCreated: (id) => log("message from native view created $id"),
+                  viewType: 'native_video_player',
+                  creationParams: {
+                    'url': widget.url,
+                    'shouldMute': widget.shouldMute,
+                    'isLandscape': widget.isLandscape,
+                    "preLoadUrls": takeOnlyFive(
+                        removedItem: widget.url, list: widget.preloadUrl ?? []),
+                  },
+                  creationParamsCodec: const StandardMessageCodec(),
+                ),
+                if (!_started || !widget.shouldShow) widget.placeholder ?? Container(),
+              ],
+            ),
+          ),
+        ],
+      );
 }
 
 List<String> takeOnlyFive(

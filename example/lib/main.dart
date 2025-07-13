@@ -24,20 +24,28 @@ class VideoExampleScreen extends StatefulWidget {
 }
 
 class _VideoExampleScreenState extends State<VideoExampleScreen> {
-
-  final controller = NativeVideoController(videos.first);
+  final controller = NativeVideoController();
 
   @override
   void initState() {
-
+    NativeVideoController.cacheVideos(videos);
     super.initState();
   }
 
   @override
   Widget build(BuildContext context) {
+    // if (true) {
+    //   return Scaffold(
+    //     body: Center(
+    //       child: Text(
+    //         "This example is not supported on web, please run on iOS or Android",
+    //         style: TextStyle(fontSize: 20),
+    //       ),
+    //     ),
+    //   );
+    // }
     return Scaffold(
-      body: 
-      PageView.builder(
+      body: PageView.builder(
         onPageChanged: (value) {
           NativeVideoController.reset();
           setState(() {});
@@ -48,63 +56,35 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
           // final randomIndex = true ? index : Random().nextInt(videos.length);
           // final nextVideo = videos[index + 1];
           // preloadImage(generateThumbnailUrl(nextVideo), context);
-          final videoUrl =  videos.reversed.toList()[index];
+          final videoUrl = videos.toList()[index];
           return Column(
             children: [
-              Container(height: .1,color: Colors.transparent,),
               Expanded(
                 child: NativeVideoWidget(
+                  onDeinit: (i) {
+                    log("onDeinit called", name: "NativeVideoWidget");
+                  },
+                  onFinished: (i) {
+                    log("onFinished called", name: "NativeVideoWidget");
+                  },
+                  onDoubleTap: () {
+                    log("onDoubleTap called", name: "NativeVideoWidget");
+                  },
                   shouldShow: true,
                   url: videoUrl,
-                  preloadUrl: videos.reversed.toList(),
+                  preloadUrl: videos.toList(),
                   shouldMute: false,
                   isLandscape: false,
-                  // placeholder: Image.network(
-                  //   generateThumbnailUrl(videoUrl),
-                  //   fit: BoxFit.cover,
-                  //   width: MediaQuery.of(context).size.width,
-                  //   height: MediaQuery.of(context).size.height,
-                  // ),
-                  onDoubleTapDown: (d) {
-                    log("double tapped");
-                  }, shouldShow: true,
                 ),
               ),
-            Container(height: 50,color: Colors.transparent,)
+              Container(
+                height: 50,
+                color: Colors.transparent,
+              )
             ],
           );
         },
       ),
-    
     );
   }
-}
-
-String extractIdFromUrl(String videoUrl) {
-  // Extract the video ID using regular expression
-  final RegExp regExp = RegExp(r"\/video\/([a-f0-9]+)\.mp4");
-  final match = regExp.firstMatch(videoUrl);
-
-  // Return the extracted ID
-  if (match != null && match.groupCount > 0) {
-    return match.group(1)!;
-  }
-
-  return ""; // Return an empty string if no match is found
-}
-
-String generateThumbnailUrl(String videoUrl) {
-  String videoId = extractIdFromUrl(videoUrl);
-  if (videoId.isNotEmpty) {
-    return "https://media.tezda.com/thumbnail/$videoId.jpg";
-  }
-  return ""; // Return an empty string if no ID was extracted
-}
-
-void preloadImage(String imageUrl, BuildContext context) {
-  // Create an ImageProvider
-  final imageProvider = NetworkImage(imageUrl);
-
-  // Preload the image into the cache
-  precacheImage(imageProvider, context);
 }

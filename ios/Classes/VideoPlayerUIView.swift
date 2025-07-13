@@ -24,6 +24,10 @@ let storage = try? Storage<String, Data>(
     diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forData())
 
 class VideoPlayerUIView: UIView {
+    
+    
+    static let shared = VideoPlayerUIView(frame: .zero, videoURL: URL(string: "https://www.apple.com")!, isMuted: false, isLandScape: false, nextVideos: [])
+    
     private var player: AVPlayer!
     private var playerLayer: AVPlayerLayer!
     private var timeObserverToken: Any?
@@ -41,6 +45,8 @@ class VideoPlayerUIView: UIView {
     private var preCachingList: [String] = []
     private var resumeWorkItem: DispatchWorkItem?
     private var neverShowBufferingIndicator = false
+    private var currentTime: Double = 0.0
+    private var duration: Double = 0.0
 
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
@@ -96,16 +102,16 @@ class VideoPlayerUIView: UIView {
         removePeriodicTimeObserver()
         
         // Remove player item observers
-        if let currentItem = player?.currentItem {
-            currentItem.removeObserver(self, forKeyPath: "status")
-            currentItem.removeObserver(self, forKeyPath: "loadedTimeRanges")
-            currentItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
-            currentItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
-            currentItem.removeObserver(self, forKeyPath: "presentationSize")
-            currentItem.removeObserver(self, forKeyPath: "isPlaybackBufferFull")
+        // if let currentItem = player?.currentItem {
+        //     currentItem.removeObserver(self, forKeyPath: "status")
+        //     currentItem.removeObserver(self, forKeyPath: "loadedTimeRanges")
+        //     currentItem.removeObserver(self, forKeyPath: "playbackBufferEmpty")
+        //     currentItem.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp")
+        //     currentItem.removeObserver(self, forKeyPath: "presentationSize")
+        //     currentItem.removeObserver(self, forKeyPath: "isPlaybackBufferFull")
             
-            NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: currentItem)
-        }
+        //     NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: currentItem)
+        // }
         
         // Remove player layer
         playerLayer?.removeFromSuperlayer()
@@ -122,13 +128,7 @@ class VideoPlayerUIView: UIView {
             item.cancelPendingSeeks()
             item.asset.cancelLoading()
         }
-        nextVideoPlayerItems.removeAll()
-                let eventData: [String: Any] = [
-                    "cleaning": "Player cleaned up successfully."
 
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
     }
     
 private func setupBufferingIndicator() {
@@ -248,11 +248,19 @@ private func setupBufferingIndicator() {
     }
 
     private func setupGestureRecognizers() {
+        // Single tap for play/pause
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tapGesture.numberOfTapsRequired = 1
         addGestureRecognizer(tapGesture)
         
-        // Make sure user interaction is enabled
+        // Double tap for mute/unmute
+        let doubleTapGesture = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTapGesture.numberOfTapsRequired = 2
+        addGestureRecognizer(doubleTapGesture)
+        
+        // Make sure single tap doesn't interfere with double tap
+        tapGesture.require(toFail: doubleTapGesture)
+        
         isUserInteractionEnabled = true
     }
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
@@ -265,6 +273,16 @@ private func setupBufferingIndicator() {
         }
         
   
+    }
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let eventData: [String: Any] = [
+            "onDoubleTap": true
+
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+      
     }
 
     private func setupAppStateObservers() {
@@ -479,9 +497,9 @@ private func setupBufferingIndicator() {
         ) { [weak self] time in
             guard let self = self else { return }
             
-            let currentTime = time.seconds
-            let duration = self.player.currentItem?.duration.seconds ?? 0
-            
+            currentTime = time.seconds
+            duration = self.player.currentItem?.duration.seconds ?? 0
+         
             // Only update slider if user isn't interacting with it
 //            if !self.isSliding && duration > 0 {
 //                self.progressSlider.value = Float(currentTime / duration)
@@ -496,18 +514,26 @@ private func setupBufferingIndicator() {
             progressSlider.value = Float(currentTime / duration)
         }
         // Prepare the event data and send it to Flutter
-        let eventData: [String: Any] = [
-            "currentTime": currentTime,
-            "duration": duration,
-        ]
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(handleSeekToNotification(_:)),
-            name: Notification.Name("SeekToTimeNotification"), object: nil)
-
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//        let eventData: [String: Any] = [
+//            "currentTime": currentTime,
+//            "duration": duration,
+//        ]
+//        NotificationCenter.default.addObserver(
+//            self, selector: #selector(handleSeekToNotification(_:)),
+//            name: Notification.Name("SeekToTimeNotification"), object: nil)
+//
+//        NotificationCenter.default.post(
+//            name: Notification.Name("VideoDurationUpdate"), object: eventData)
     }
     @objc private func loopVideo() {
+        let eventData: [String: Any] = [
+            "onFinished": true,
+            "duration": self.player.currentItem?.duration.seconds ?? 0,
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        print("onFinished")
+
         player.seek(to: .zero)
         player.play()
     }
@@ -685,20 +711,7 @@ private func setupBufferingIndicator() {
         fatalError("init(coder:) has not been implemented")
     }
 
-    deinit {
-//         cleanupPlayer()
-        if let item = player.currentItem {
-            item.removeObserver(self, forKeyPath: "status")
-        }
-        removePeriodicTimeObserver()
-        NotificationCenter.default.removeObserver(
-            self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
-        appStateObservers.forEach {
-            NotificationCenter.default.removeObserver($0)
-        }
-
-    }
     private func removePeriodicTimeObserver() {
         if let token = timeObserverToken {
             player.removeTimeObserver(token)
@@ -719,7 +732,28 @@ private func setupBufferingIndicator() {
         }
     }
     
+    deinit {
+//        print()
+        let eventData: [String: Any] = [
+            "onDeinit": true,
+            "duration": currentTime,
+            "video": url.absoluteString
+        ]
+        NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+        if let item = player.currentItem {
+            item.removeObserver(self, forKeyPath: "status")
+        }
+        // removePeriodicTimeObserver()
+        cleanupPlayer()
+        NotificationCenter.default.removeObserver(
+            self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
+        appStateObservers.forEach {
+            NotificationCenter.default.removeObserver($0)
+        }
+
+    }
 
 
 }

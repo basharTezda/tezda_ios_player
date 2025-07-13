@@ -29,7 +29,13 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
             case "toggleMute":
                 NotificationCenter.default.post(name: NSNotification.Name("ToggleMute"), object: nil)
                 result(nil)
-                
+            case "cacheVideos":
+                if let arguments = call.arguments as? [String: Any],
+                   let videos = arguments["videos"] as? [String] {
+                    instance.handleCacheVideos(videos: videos)
+                } else {
+                    result(FlutterError(code: "INVALID_ARGUMENT", message: "Time argument missing", details: nil))
+                }
             case "seekTo":
                 if let arguments = call.arguments as? [String: Any],
                    let time = arguments["time"] as? Double {
@@ -56,18 +62,23 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         self.eventSink = events
         return nil
     }
+    private func handleCacheVideos(videos: [String]){
+        VideoPlayerUIView.shared.cacheVideoUrls(urls: videos) { result in
+            print("Caching completed: \(result)")
+        }
+    }
 
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         self.eventSink = nil
         return nil
     }
     public func sendEventToFlutter(event: Any ) {
-//         do {
-//             let result = try  eventSink?(["event": "\(event)"])
-// //            print("Success:", result)
-//         } catch {
-// //            print("Error:", error)
-//         }
+         do {
+             let result = try  eventSink?(["event": "\(event)"])
+ //            print("Success:", result)
+         } catch {
+ //            print("Error:", error)
+         }
        
     }
 }

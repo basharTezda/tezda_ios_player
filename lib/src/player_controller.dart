@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert' show jsonDecode;
-import 'dart:developer';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class NativeVideoController {
@@ -49,7 +47,7 @@ class NativeVideoController {
       isFinished = true;
     }
     if (event['message'] != null) {
-      log(event.toString());
+      // log(event.toString());
     }
 
     return event;
@@ -71,12 +69,14 @@ class NativeVideoController {
     await _channel.invokeMethod('pause');
   }
 
+ static Future<void> cacheVideos(List<String> videos) async {
+    await _channel.invokeMethod('cacheVideos', {'videos': videos});
+  }
+
   static Future<void> seekTo(double seconds) async {
     try {
       await _channel.invokeMethod('seekTo', {'time': seconds});
-    } on PlatformException catch (e) {
-      log('Error seeking to $seconds: ${e.message}');
-    }
+    } on PlatformException catch (e) {}
   }
 
   static Duration setUpMicro(dynamic duration) {
