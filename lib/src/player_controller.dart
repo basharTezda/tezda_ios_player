@@ -54,11 +54,8 @@ class NativeVideoController {
       log(event.toString());
     }
 
-      return event;
-    });
-  }
-
-  // Stream to listen for updates from the native side
+    return event;
+  });
 
   Future<void> preCacheVideos(List<String> urls) async {
     try {
@@ -96,7 +93,7 @@ class NativeVideoController {
     await _channel.invokeMethod('pause');
   }
 
-  Future<void> seekTo(double seconds) async {
+  static Future<void> seekTo(double seconds) async {
     try {
       await _channel.invokeMethod('seekTo', {'time': seconds});
     } on PlatformException catch (e) {
@@ -113,12 +110,12 @@ class NativeVideoController {
   }
 
   static Future<void> reset() async {
-    // currentTime = Duration(microseconds: 0);
-    // duration = Duration(microseconds: 1);
-    // buffered = Duration(microseconds: 0);
-    // isPlaying = false;
-    // isReady = false;
-    // isFinished = false;
+    currentTime = Duration(microseconds: 0);
+    duration = Duration(microseconds: 1);
+    buffered = Duration(microseconds: 0);
+    isPlaying = false;
+    isReady = false;
+    isFinished = false;
   }
 
   static _extractMessage(data) {

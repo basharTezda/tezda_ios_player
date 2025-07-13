@@ -5,7 +5,7 @@ class VideoPlatformView: NSObject, FlutterPlatformView {
     private let playerView: VideoPlayerUIView
     private let staticUrl: URL = URL(string: "https://commondatastorage.googleapislkdsajfklajslkfjsa.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4")!
     
-    init(frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?,   binaryMessenger messenger: FlutterBinaryMessenger) {
+    init(frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) {
         // Default values
         var url: URL = staticUrl
         var isMuted: Bool = false
@@ -37,7 +37,7 @@ class VideoPlatformView: NSObject, FlutterPlatformView {
             videoURL: url,
             isMuted: isMuted,
             isLandScape: isLandScape,
-            nextVideos: preLoad ?? [],  binaryMessenger: messenger
+            nextVideos: preLoad ?? []
         )
         
         super.init()
