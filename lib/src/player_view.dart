@@ -45,7 +45,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
     super.initState();
   }
 
-  final NativeVideoController controller = NativeVideoController();
+  // final NativeVideoController controller = NativeVideoController(widget.url);
   bool shouldPlayVideo = false;
   @override
   Widget build(BuildContext context) => widget.shouldShow
