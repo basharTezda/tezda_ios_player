@@ -19,8 +19,7 @@ class NativeVideoController {
   static bool isBuffering = false;
   static bool isReady = false;
   static bool isFinished = false;
-  final List<String> _cachedUrls = [];
-  final int _maxCacheSize = 2;
+
   // Stream to listen for updates from the native side
   static Stream<Map> onUpdateStream =
       _eventChannel.receiveBroadcastStream().map((data) {
@@ -33,7 +32,6 @@ class NativeVideoController {
     }
     if (event['isBuffering'] != null) {
       isBuffering = event['isBuffering'];
-     
     }
     if (event['currentTime'] != null) {
       currentTime = setUpMicro(event['currentTime']);
@@ -56,26 +54,6 @@ class NativeVideoController {
 
     return event;
   });
-
-  Future<void> preCacheVideos(List<String> urls) async {
-    try {
-      // Keep only the last X videos to prevent excessive caching
-      // if (_cachedUrls.length > _maxCacheSize) {
-      //   final urlsToRemove = _cachedUrls.sublist(0, _cachedUrls.length - _maxCacheSize);
-      //   await _channel.invokeMethod('removeCachedVideos', {'urls': urlsToRemove});
-      //   _cachedUrls.removeWhere((url) => urlsToRemove.contains(url));
-      // }
-
-      // Cache new videos
-      final newUrls = urls.where((url) => !_cachedUrls.contains(url)).toList();
-      if (newUrls.isNotEmpty) {
-        await _channel.invokeMethod('cacheVideoList', {'urls': newUrls});
-        _cachedUrls.addAll(newUrls);
-      }
-    } catch (e) {
-      debugPrint('Error caching videos: $e');
-    }
-  }
 
   Future<void> togglePlayPause() async {
     await _channel.invokeMethod('togglePlay');
@@ -116,6 +94,7 @@ class NativeVideoController {
     isPlaying = false;
     isReady = false;
     isFinished = false;
+    onUpdateStream.drain();
   }
 
   static _extractMessage(data) {

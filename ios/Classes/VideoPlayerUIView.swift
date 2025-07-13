@@ -615,18 +615,13 @@ private func setupBufferingIndicator() {
 
             }
          case "playbackBufferEmpty":
-         if !neverShowBufferingIndicator {
-            // Show buffering indicator 
-            DispatchQueue.main.async {
+          if !neverShowBufferingIndicator && player.timeControlStatus != .playing {
+               DispatchQueue.main.async {
             self.bufferingIndicator.startAnimating()
-        }
-         }
-            let eventData: [String: Any] = [
-                "message": "Buffering started ",
-                "isBuffering": true
-            ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+               }
+                 }
+         
+       
          case "playbackLikelyToKeepUp":
     
             DispatchQueue.main.async {
@@ -650,14 +645,7 @@ private func setupBufferingIndicator() {
                      execute: workItem
                  )
              }
-            let eventData: [String: Any] = [
-                "message": "Buffering complete. Resuming playback.",
-                "isBuffering": false
-            ]
-            
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
-            
+          
         case "isPlaybackBufferFull":
             // Another opportunity to resume playback
             DispatchQueue.main.async {
