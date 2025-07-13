@@ -40,6 +40,7 @@ class VideoPlayerUIView: UIView {
     private var bufferingIndicator: UIActivityIndicatorView!
     private var preCachingList: [String] = []
     private var resumeWorkItem: DispatchWorkItem?
+    private var neverShowBufferingIndicator = false
 
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
@@ -57,6 +58,10 @@ class VideoPlayerUIView: UIView {
 
         let playerItem: AVPlayerItem
         if let cachedAsset = self.asset(for: videoURL) {
+            neverShowBufferingIndicator = true
+              self.cacheVideoUrls(urls: self.preCachingList) { FlutterResult in
+
+        }
             playerItem = AVPlayerItem(asset: cachedAsset)
             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
         } else {
@@ -374,10 +379,10 @@ private func setupBufferingIndicator() {
             completion()
             return
         }
-        if activeCachingOperations[url] == true {
-            completion() // Already in progress
-            return
-        }
+        // if activeCachingOperations[url] == true {
+        //     completion() // Already in progress
+        //     return
+        // }
         
         // Mark as being cached
         activeCachingOperations[url] = true
@@ -610,9 +615,12 @@ private func setupBufferingIndicator() {
 
             }
          case "playbackBufferEmpty":
+         if !neverShowBufferingIndicator {
+            // Show buffering indicator 
             DispatchQueue.main.async {
             self.bufferingIndicator.startAnimating()
         }
+         }
             let eventData: [String: Any] = [
                 "message": "Buffering started ",
                 "isBuffering": true
