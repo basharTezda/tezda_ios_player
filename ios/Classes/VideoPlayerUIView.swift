@@ -445,8 +445,8 @@ private func setupBufferingIndicator() {
             self, forKeyPath: "playbackBufferEmpty", options: [.new], context: nil)
         player.currentItem?.addObserver(
             self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
-        player.currentItem?.addObserver(
-            self, forKeyPath: "presentationSize", options: [.new], context: nil)
+//        player.currentItem?.addObserver(
+//            self, forKeyPath: "presentationSize", options: [.new], context: nil)
         player.currentItem?.addObserver(
             self, forKeyPath: "isPlaybackBufferFull", options: [.new], context: nil)
      
@@ -470,17 +470,6 @@ private func setupBufferingIndicator() {
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
-//        checkIfVideoHasAudio(asset: playerItem.asset) { hasAudio in
-//            print("Video has audio: \(hasAudio)")
-//         
-//                let eventData: [String: Any] = [
-//                    "message": "audio is available: \(hasAudio)"
-//
-//                ]
-//                NotificationCenter.default.post(
-//                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
-//            
-//        }
     }
     private func addPeriodicTimeObserver() {
         removePeriodicTimeObserver()
@@ -532,8 +521,6 @@ private func setupBufferingIndicator() {
         ]
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"), object: eventData)
-        print("onFinished")
-
         player.seek(to: .zero)
         player.play()
     }
@@ -659,7 +646,7 @@ private func setupBufferingIndicator() {
                  // Create new work item
                  let workItem = DispatchWorkItem { [weak self] in
                      guard let self = self else { return }
-                     if self.player.timeControlStatus != .playing {
+                     if self.player.timeControlStatus != .playing && self.isViewVisible(){
                          self.bufferingIndicator.stopAnimating()
                          self.player.play()
                      }
@@ -676,7 +663,7 @@ private func setupBufferingIndicator() {
             // Another opportunity to resume playback
             DispatchQueue.main.async {
                 self.bufferingIndicator.stopAnimating()
-                if self.player.timeControlStatus != .playing {
+                if self.player.timeControlStatus != .playing && self.isViewVisible(){
                     self.player.play()
                 }
             }
@@ -736,7 +723,8 @@ private func setupBufferingIndicator() {
 //        print()
         let eventData: [String: Any] = [
             "onDeinit": true,
-            "duration": currentTime,
+            "duration": duration,
+            "currentTime": currentTime,
             "video": url.absoluteString
         ]
         NotificationCenter.default.post(

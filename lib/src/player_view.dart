@@ -19,7 +19,7 @@ class NativeVideoWidget extends StatefulWidget {
   final Function(VisibilityInfo)? onVisibilityChanged;
   final Function()? onDoubleTap;
   final Function(double)? onFinished;
-  final Function(double)? onDeinit;
+  final Function(double,double,String)? onDeinit;
 
   final bool shouldShow;
   const NativeVideoWidget(
@@ -53,7 +53,7 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                 widget.onFinished?.call(event['duration']);
               }
               if (event['onDeinit'] != null && widget.onDeinit != null) {
-                widget.onDeinit?.call(event['duration']);
+                widget.onDeinit?.call(event['duration'],event['currentTime'],event['video']);
               }
               if (event['onDoubleTap'] != null && widget.onDoubleTap != null) {
                 widget.onDoubleTap?.call();
