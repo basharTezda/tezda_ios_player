@@ -28,7 +28,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
 
   @override
   void initState() {
-    NativeVideoController.cacheVideos(videos);
+    // NativeVideoController.cacheVideos(videos);
     super.initState();
   }
 
@@ -61,7 +61,7 @@ class _VideoExampleScreenState extends State<VideoExampleScreen> {
             children: [
               Expanded(
                 child: NativeVideoWidget(
-                  onDeinit: (i) {
+                  onDeinit: (i,n,l) {
                     log("onDeinit called", name: "NativeVideoWidget");
                   },
                   onFinished: (i) {

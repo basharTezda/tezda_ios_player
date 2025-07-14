@@ -76,6 +76,7 @@ open class CachingPlayerItem: AVPlayerItem {
         
         func resourceLoader(_ resourceLoader: AVAssetResourceLoader, didCancel loadingRequest: AVAssetResourceLoadingRequest) {
             pendingRequests.remove(loadingRequest)
+            ////
         }
         
         // MARK: URLSession delegate

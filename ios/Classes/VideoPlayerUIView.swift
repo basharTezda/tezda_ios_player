@@ -3,7 +3,8 @@ import Cache
 import Flutter
 import SystemConfiguration
 import UIKit
-var activeCachingOperations: [URL: Bool] = [:]
+var activeCachingOperations: [String:CachingPlayerItem ] = [:]
+var activePlayers: [String:AVPlayer ] = [:]
 func isConnectedToNetwork() -> Bool {
     let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
     var flags = SCNetworkReachabilityFlags()
@@ -62,38 +63,43 @@ class VideoPlayerUIView: UIView {
             print("Invalid URL")
         }
 
+      
         let playerItem: AVPlayerItem
-        if let cachedAsset = self.asset(for: videoURL) {
-            neverShowBufferingIndicator = true
-              self.cacheVideoUrls(urls: self.preCachingList) { FlutterResult in
-
-        }
-            playerItem = AVPlayerItem(asset: cachedAsset)
-            initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-        } else {
-            // if !isConnectedToNetwork() {
-        
-            //         object: "No network connection and no cached video found.")
-            //     playerItem = AVPlayerItem(url: URL(string: videoURL.absoluteString)!)
-            //     initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-            //     return
-            // }
-
-            if player == nil {
-                playerItem = CachingPlayerItem(url: videoURL)
-                (playerItem as? CachingPlayerItem)?.delegate = self
-                initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-                
-            }
-            
-        }
+         
+         // First check if we have a cached asset
+         if let cachedAsset = self.asset(for: videoURL) {
+             neverShowBufferingIndicator = true
+          
+             playerItem = AVPlayerItem(asset: cachedAsset)
+             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+         }
+         // Then check if we have an active caching operation for this URL
+         else if let activeItem = activeCachingOperations[videoURL.absoluteString] {
+             print("here")
+             // Use the existing caching item
+             neverShowBufferingIndicator = false
+//             playerItem = activeItem
+             activeItem.delegate = self
+             initPlayer(playerItem: activeItem, isMuted: isMuted, isLandScape: isLandScape, isActive: true)
+         }
+         // Otherwise create a new one
+         else {
+             if player == nil {
+                 let newPlayerItem = CachingPlayerItem(url: videoURL)
+                 newPlayerItem.delegate = self
+                 activeCachingOperations[videoURL.absoluteString] = newPlayerItem
+                 playerItem = newPlayerItem
+                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+             }
+         }
+         
         
         setupAppStateObservers()
         setupAppSwitcherObservers()
         setupProgressSlider()
-          setupBufferingIndicator()
+        setupBufferingIndicator()
         setupGestureRecognizers()
-
+        self.cacheVideoUrls(urls: self.preCachingList) { _ in }
      
 
     }
@@ -114,20 +120,20 @@ class VideoPlayerUIView: UIView {
         // }
         
         // Remove player layer
-        playerLayer?.removeFromSuperlayer()
-        playerLayer = nil
-        
-        // Pause and nil the player
-        player?.pause()
-        player?.replaceCurrentItem(with: nil)
-        player = nil
-        
-        // Clean up next video items
-        nextVideoPlayerItems.forEach { item in
-            item.delegate = nil
-            item.cancelPendingSeeks()
-            item.asset.cancelLoading()
-        }
+//        playerLayer?.removeFromSuperlayer()
+//        playerLayer = nil
+//        
+//        // Pause and nil the player
+//        player?.pause()
+//        player?.replaceCurrentItem(with: nil)
+//        player = nil
+//        
+//        // Clean up next video items
+//        nextVideoPlayerItems.forEach { item in
+//            item.delegate = nil
+//            item.cancelPendingSeeks()
+//            item.asset.cancelLoading()
+//        }
 
     }
     
@@ -403,7 +409,7 @@ private func setupBufferingIndicator() {
         // }
         
         // Mark as being cached
-        activeCachingOperations[url] = true
+       
         let nextVideoPlayerItem = CachingPlayerItem(url: url)
         nextVideoPlayerItem.delegate = self
 
@@ -414,6 +420,8 @@ private func setupBufferingIndicator() {
 
         // Set rate to 0.1 to start loading but not actually play
         tempPlayer.rate = 0.1
+        activeCachingOperations[url.absoluteString] = nextVideoPlayerItem
+        activePlayers[url.absoluteString] = tempPlayer
         nextVideoPlayerItems.append(nextVideoPlayerItem)
         // After a short delay, pause it to prevent unnecessary bandwidth usage
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
@@ -421,9 +429,16 @@ private func setupBufferingIndicator() {
         }
         completion()
     }
-    private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool) {
-        // cleanupPlayer()
-        player = AVPlayer(playerItem: playerItem)
+    private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool, isActive: Bool = false) {
+
+       if(isActive){
+           player = activePlayers[url.absoluteString]
+           player.seek(to: .zero)
+        }
+        if(!isActive){
+            player = AVPlayer(playerItem: playerItem)
+        }
+        activePlayers[url.absoluteString] = player
         player.isMuted = isMuted
         player.automaticallyWaitsToMinimizeStalling = false
         playerLayer = AVPlayerLayer(player: player)
@@ -762,9 +777,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             name: Notification.Name("VideoDurationUpdate"),
             object: eventData)
         print("\(eventData)")
-        self.cacheVideoUrls(urls: self.preCachingList) { FlutterResult in
-
-        }
+      
 
     }
     func playerItem(
