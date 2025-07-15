@@ -63,7 +63,7 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         return nil
     }
     private func handleCacheVideos(videos: [String]){
-        VideoPlayerUIView.shared.cacheVideoUrls(urls: videos) { result in
+        VideoPlayerUIView.shared.cacheVideoUrls(urls: [videos.first ?? ""]) { result in
             print("Caching completed: \(result)")
         }
     }
@@ -73,12 +73,21 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         return nil
     }
     public func sendEventToFlutter(event: Any ) {
-         do {
-             let result = try  eventSink?(["event": "\(event)"])
- //            print("Success:", result)
-         } catch {
- //            print("Error:", error)
-         }
-       
+        DispatchQueue.main.async { [weak self] in
+            guard let channel = self?.eventSink else { return }
+            do {
+                let data = try JSONSerialization.data(withJSONObject: ["event": "\(event)"])
+                channel(["event": "\(event)"])
+            } catch {
+                print("Failed to send event: \(error)")
+            }
+        }
+//         do {
+//             let result = try  eventSink?(["event": "\(event)"])
+// //            print("Success:", result)
+//         } catch {
+// //            print("Error:", error)
+//         }
+//       
     }
 }

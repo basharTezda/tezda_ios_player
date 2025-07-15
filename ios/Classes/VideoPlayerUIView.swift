@@ -65,13 +65,18 @@ class VideoPlayerUIView: UIView {
 
       
         let playerItem: AVPlayerItem
-         
+        DispatchQueue.main.async {
+     self.bufferingIndicator.startAnimating()
+        }
+          
          // First check if we have a cached asset
          if let cachedAsset = self.asset(for: videoURL) {
              neverShowBufferingIndicator = true
           
              playerItem = AVPlayerItem(asset: cachedAsset)
              initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
+             activePlayers[self.url.absoluteString] = nil
+             activeCachingOperations[self.url.absoluteString] = nil
          }
          // Then check if we have an active caching operation for this URL
          else if let activeItem = activeCachingOperations[videoURL.absoluteString] {
@@ -517,6 +522,10 @@ private func setupBufferingIndicator() {
         if !isSliding && duration > 0 {
             progressSlider.value = Float(currentTime / duration)
         }
+        DispatchQueue.main.async {
+     self.bufferingIndicator.stopAnimating()
+        }
+          
         // Prepare the event data and send it to Flutter
 //        let eventData: [String: Any] = [
 //            "currentTime": currentTime,
@@ -768,7 +777,10 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
         let urlToCache = isPlayerItemInNextItems ? playerItem.url : url
         print("start saving")
         self.cacheVideo(from: urlToCache!,videoData: data)
-
+        if(isPlayerItemInNextItems){
+            activePlayers[urlToCache!.absoluteString] = nil
+            activeCachingOperations[urlToCache!.absoluteString] = nil
+        }
         let eventData: [String: Any] = [
             "message": "Video downloaded successfully.",
             "isNextVideo": isPlayerItemInNextItems,

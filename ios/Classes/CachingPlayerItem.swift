@@ -101,6 +101,11 @@ open class CachingPlayerItem: AVPlayerItem {
             }
             processPendingRequests()
             owner?.delegate?.playerItem?(owner!, didFinishDownloadingData: mediaData!)
+            if let owner = owner {
+                if owner.shouldClearMediaDataAfterDownload {
+                    mediaData = nil
+                }
+            }
         }
         
         // MARK: -
@@ -173,6 +178,7 @@ open class CachingPlayerItem: AVPlayerItem {
      let url: URL
     fileprivate let initialScheme: String?
     fileprivate var customFileExtension: String?
+    var shouldClearMediaDataAfterDownload = false
     
     weak var delegate: CachingPlayerItemDelegate?
     
