@@ -111,20 +111,37 @@ open class CachingPlayerItem: AVPlayerItem {
         // MARK: -
         
         func processPendingRequests() {
-            
-            // get all fullfilled requests
-            let requestsFulfilled = Set<AVAssetResourceLoadingRequest>(pendingRequests.compactMap {
-                self.fillInContentInformationRequest($0.contentInformationRequest)
-                if self.haveEnoughDataToFulfillRequest($0.dataRequest!) {
-                    $0.finishLoading()
-                    return $0
+            // Create a thread-safe access to pendingRequests
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                
+                // Create a local copy to avoid mutation during iteration
+                let currentPendingRequests = self.pendingRequests
+                
+                // get all fulfilled requests
+                let requestsFulfilled = currentPendingRequests.compactMap { request -> AVAssetResourceLoadingRequest? in
+                    // Safely handle optional contentInformationRequest
+                    if let contentInfoRequest = request.contentInformationRequest {
+                        self.fillInContentInformationRequest(contentInfoRequest)
+                    }
+                    
+                    // Safely handle optional dataRequest
+                    guard let dataRequest = request.dataRequest else {
+                        return nil
+                    }
+                    
+                    if self.haveEnoughDataToFulfillRequest(dataRequest) {
+                        request.finishLoading()
+                        return request
+                    }
+                    return nil
                 }
-                return nil
-            })
-        
-            // remove fulfilled requests from pending requests
-            _ = requestsFulfilled.map { self.pendingRequests.remove($0) }
-
+                
+                // remove fulfilled requests from pending requests
+                requestsFulfilled.forEach { fulfilledRequest in
+                    self.pendingRequests.remove(fulfilledRequest)
+                }
+            }
         }
         
         func fillInContentInformationRequest(_ contentInformationRequest: AVAssetResourceLoadingContentInformationRequest?) {
