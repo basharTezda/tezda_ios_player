@@ -3,10 +3,11 @@ import Cache
 import Flutter
 import SystemConfiguration
 import UIKit
-import CryptoKit
 private var activePlayers:   [String: AVPlayer]       = [:]   // LRU ≤ 4
 private var preloadPlayers:  [String: AVPlayer]       = [:]   // tmp only
 private var loadingItems:    [String: CachingPlayerItem] = [:]
+private var upcomingQueue = [URL]()
+private let maxPrefetch = 3
 func isConnectedToNetwork() -> Bool {
     let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
     var flags = SCNetworkReachabilityFlags()
@@ -21,20 +22,25 @@ func isConnectedToNetwork() -> Bool {
     return isReachable && !needsConnection
 }
 
-// 500 MB disk cap, objects expire 30 minutes after last access:
+// expire on‑disk files after 1 hour, and cap total at 500 MB
 let diskConfig = DiskConfig(
-    name: "VideoCache",
-    expiry: .seconds(60 * 30),          // 30 min TTL
-    maxSize: 500 * 1024 * 1024          // 500 MB
+  name: "VideoCache",
+  expiry: .seconds(3600),
+  maxSize: UInt(500 * 1024 * 1024)
 )
-// in‑memory cache: at most 5 objects
+
+// expire in‑RAM entries (if you ever used them) after 30 min:
 let memoryConfig = MemoryConfig(
-    expiry: .seconds(60 * 30),          // same 30 min TTL
-    countLimit: 5,
-    totalCostLimit: 5                   // we don’t use cost, so keep ≤ 5 items
+  expiry: .seconds(1800),
+  countLimit: 10,
+  totalCostLimit: 10
 )
+
 let storage = try? Storage<String, Data>(
     diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forData())
+
+/// Track when each URL’s prefetch began, so we can evict if it hangs >30 min.
+private var prefetchStartDates: [String: Date] = [:]
 
 class VideoPlayerUIView: UIView {
     
@@ -69,6 +75,8 @@ class VideoPlayerUIView: UIView {
         url = videoURL
         preCachingList = nextVideos
         super.init(frame: frame)
+        let nextURLs = nextVideos.compactMap { URL(string: $0) }
+        updateUpcomingQueue(with: nextURLs)
         backgroundColor = .black
         if let url = URL(string: videoURL.absoluteString) {
             // Valid URL
@@ -78,25 +86,28 @@ class VideoPlayerUIView: UIView {
             print("Invalid URL")
         }
 
-        // 1️⃣ re‑use if we already have a player for this URL
-        //  in init(frame:)
+        // 1️⃣ If it’s already playing on‑screen, reuse it:
         if let existing = activePlayers[videoURL.absoluteString] {
-            initPlayer(player: existing,        // ✅ overload uses player
-                       isMuted: isMuted,
-                       isLandScape: isLandScape)
+          initPlayer(player: existing, isMuted: isMuted, isLandScape: isLandScape)
         }
-        else if let pre = promotePreloaded(url: videoURL) {    // 🔥 <- NEW
-            initPlayer(player: pre,
-                       isMuted: isMuted,
-                       isLandScape: isLandScape)
+
+        // 2️⃣ Else if it’s sitting in preloadPlayers, promote that entire AVPlayer:
+        else if let promoted = promotePreloaded(url: videoURL) {
+          initPlayer(player: promoted, isMuted: isMuted, isLandScape: isLandScape)
         }
+
+        // 3️⃣ Otherwise fall back to disk → network:
         else {
-            let item = asset(for: videoURL).map(AVPlayerItem.init) ??
-                       AVPlayerItem(url: videoURL)
-            initPlayer(playerItem: item,
-                       isMuted: isMuted,
-                       isLandScape: isLandScape)
+          let item: AVPlayerItem
+          if let asset = localAsset(for: videoURL) {
+            item = AVPlayerItem(asset: asset)
+          } else {
+            item = AVPlayerItem(url: videoURL)
+          }
+          initPlayer(playerItem: item, isMuted: isMuted, isLandScape: isLandScape)
         }
+
+        
         // fire‐and‐forget background caching of this URL:
         cacheInBackground(url: videoURL)
         
@@ -105,9 +116,79 @@ class VideoPlayerUIView: UIView {
         setupProgressSlider()
         setupBufferingIndicator()
         setupGestureRecognizers()
-        // now also pre‑cache any “next” videos:
-        self.cacheVideoUrls(urls: self.preCachingList) { _ in /* noop */ }
+        }
+    /// Returns an AVPlayerItem by checking disk → RAM → network
+    private func makePlayerItem(for url: URL) -> AVPlayerItem {
+      let key = url.absoluteString
+
+      // 1️⃣ Disk-backed play (preferred)
+      if let asset = localAsset(for: url) {
+        return AVPlayerItem(asset: asset)
+      }
+      
+      // 2️⃣ Promote the in‑flight CachingPlayerItem
+      if let cacheItem = loadingItems[key] {
+        // stop & detach the dummy AVPlayer
+        if let dummy = preloadPlayers[key] {
+          dummy.pause()
+          dummy.replaceCurrentItem(with: nil)
+          preloadPlayers.removeValue(forKey: key)
+        }
+        // remove from loadingItems so we don’t double‑promote
+        loadingItems.removeValue(forKey: key)
+        // now hand *that* CachingPlayerItem to your real player
+        return cacheItem
+      }
+      
+      // 3️⃣ Fallback to brand‑new network item
+      return AVPlayerItem(url: url)
     }
+
+    /// Keeps exactly `maxPrefetch` URLs in RAM, prefetching them.
+    private func updateUpcomingQueue(with nextVideos: [URL]) {
+        // 1️⃣ update our FIFO list
+        upcomingQueue = Array(nextVideos.prefix(maxPrefetch))
+
+        // 2️⃣ prefetch any that aren’t already on disk or loading
+        for url in upcomingQueue {
+            prefetch(url: url)
+        }
+    }
+
+    /// Starts a background download & RAM‑cache of one video
+    private func prefetch(url: URL) {
+        let key = url.absoluteString
+        guard loadingItems[key] == nil, asset(for: url) == nil else { return }
+
+        // 1️⃣ record start time
+        prefetchStartDates[key] = Date()
+
+        // 2️⃣ create the CachingPlayerItem + dummy AVPlayer
+        let cacheItem = CachingPlayerItem(url: url)
+        cacheItem.delegate = self
+        loadingItems[key] = cacheItem
+
+        let dummy = AVPlayer(playerItem: cacheItem)
+        dummy.isMuted = true
+        dummy.rate = 1.0
+        preloadPlayers[key] = dummy
+
+        // 3️⃣ after 30 min, if still not finished downloading, evict
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1800) { [weak self] in
+            guard let self = self else { return }
+            if let start = prefetchStartDates[key],
+               Date().timeIntervalSince(start) >= 1800,
+               loadingItems[key] != nil
+            {
+                // too old — drop from RAM
+                preloadPlayers[key]?.pause()
+                preloadPlayers.removeValue(forKey: key)
+                loadingItems.removeValue(forKey: key)
+                prefetchStartDates.removeValue(forKey: key)
+            }
+        }
+    }
+
     
     /// Moves a pre‑loaded dummy player (if any) from preload → active.
     private func promotePreloaded(url: URL) -> AVPlayer? {
@@ -121,7 +202,7 @@ class VideoPlayerUIView: UIView {
     }
 
     /// Keep only currentURL + the 3 most‑recently‑prefetched URLs in memory.
-    private func purgeOffscreenPlayers(maxInRAM: Int = 5) {
+    private func purgeOffscreenPlayers(maxInRAM: Int = 4) {
         // if we’re already at or below the limit, nothing to do
         guard activePlayers.count > maxInRAM else { return }
 
@@ -524,7 +605,7 @@ private func setupBufferingIndicator() {
         trimActivePlayers()
     }
     
-    private func trimActivePlayers(maxInRAM: Int = 5) {
+    private func trimActivePlayers(maxInRAM: Int = 4) {
         let protectedKey = currentURL.absoluteString
         var keys = activePlayers.keys.filter { $0 != protectedKey }
         
@@ -833,16 +914,23 @@ private func setupBufferingIndicator() {
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        let isNext = nextVideoPlayerItems.contains { $0 == playerItem }
-        let urlToCache = isNext ? playerItem.url : url
-        cacheVideo(from: urlToCache!,videoData: data)
-        // free RAM we no longer need
-            if let p = preloadPlayers[urlToCache!.absoluteString] {
-                p.pause()
-                preloadPlayers.removeValue(forKey: urlToCache!.absoluteString)
-            }
-            loadingItems.removeValue(forKey: urlToCache!.absoluteString)
+        let url = playerItem.url
+        let key = url.absoluteString
+
+        // 1️⃣ Persist to disk (with 1 hr TTL & ≤500 MB cap)
+        cacheVideo(from: url, videoData: data)
+
+        // 2️⃣ Immediately evict from RAM (unless it’s the one playing now)
+        if url != currentURL {
+            preloadPlayers[key]?.pause()
+            preloadPlayers.removeValue(forKey: key)
+            loadingItems.removeValue(forKey: key)
+        }
+
+        // 3️⃣ clean up our start‑time tracking
+        prefetchStartDates.removeValue(forKey: key)
     }
+
     func playerItem(
         _ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int,
         outOf bytesExpected: Int
@@ -904,9 +992,7 @@ extension VideoPlayerUIView {
         _ = getCacheURL(for: url)
         print("Caching video...2")
         do {
-            try storage?.setObject(videoData, forKey: url.absoluteString,
-                                   expiry: .seconds(60 * 30))      // optional – overrides default
-            
+            try storage?.setObject(videoData, forKey: url.absoluteString)
             if let cachedData = try? storage?.object(forKey: url.absoluteString),
                 cachedData == videoData
             {
@@ -973,31 +1059,21 @@ extension VideoPlayerUIView {
             name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         return nil
     }
-
+    /// If we’ve already cached to disk, write bytes out and return an AVURLAsset
+    private func localAsset(for url: URL) -> AVURLAsset? {
+        guard let data = try? storage?.object(forKey: url.absoluteString) else { return nil }
+        let cacheURL = getCacheURL(for: url)
+        try? data.write(to: cacheURL)
+        return AVURLAsset(url: cacheURL)
+    }
  
 
     private func getCacheURL(for url: URL) -> URL {
-        let cacheDir = FileManager.default
-            .urls(for: .cachesDirectory, in: .userDomainMask).first!
+        // Define the cache directory and the file name based on the URL's absolute string
+        let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+            .first!
+        let cacheURL = cacheDirectory.appendingPathComponent(url.lastPathComponent)
 
-        // --- build a unique, filesystem‑safe name ---
-        let raw = url.absoluteString
-        let name: String
-
-        if #available(iOS 13.0, *) {
-            // CryptoKit SHA‑256
-            let digest = SHA256.hash(data: Data(raw.utf8))
-            name = digest.map { String(format: "%02x", $0) }.joined()
-        } else {
-            // Fallback: Base64‑url encoded string of the full URL
-            name = Data(raw.utf8)
-                .base64EncodedString()
-                .replacingOccurrences(of: "/", with: "_")
-                .replacingOccurrences(of: "+", with: "-")
-        }
-
-        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
-        return cacheDir.appendingPathComponent("\(name).\(ext)")
+        return cacheURL
     }
-
 }
