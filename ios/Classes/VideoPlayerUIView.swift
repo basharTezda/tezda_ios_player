@@ -3,6 +3,7 @@ import Cache
 import Flutter
 import SystemConfiguration
 import UIKit
+import CryptoKit
 private var activePlayers:   [String: AVPlayer]       = [:]   // LRU ≤ 4
 private var preloadPlayers:  [String: AVPlayer]       = [:]   // tmp only
 private var loadingItems:    [String: CachingPlayerItem] = [:]
@@ -20,8 +21,18 @@ func isConnectedToNetwork() -> Bool {
     return isReachable && !needsConnection
 }
 
-let diskConfig = DiskConfig(name: "VideoCache")
-let memoryConfig = MemoryConfig(expiry: .never, countLimit: 10, totalCostLimit: 10)
+// 500 MB disk cap, objects expire 30 minutes after last access:
+let diskConfig = DiskConfig(
+    name: "VideoCache",
+    expiry: .seconds(60 * 30),          // 30 min TTL
+    maxSize: 500 * 1024 * 1024          // 500 MB
+)
+// in‑memory cache: at most 5 objects
+let memoryConfig = MemoryConfig(
+    expiry: .seconds(60 * 30),          // same 30 min TTL
+    countLimit: 5,
+    totalCostLimit: 5                   // we don’t use cost, so keep ≤ 5 items
+)
 let storage = try? Storage<String, Data>(
     diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forData())
 
@@ -110,7 +121,7 @@ class VideoPlayerUIView: UIView {
     }
 
     /// Keep only currentURL + the 3 most‑recently‑prefetched URLs in memory.
-    private func purgeOffscreenPlayers(maxInRAM: Int = 4) {
+    private func purgeOffscreenPlayers(maxInRAM: Int = 5) {
         // if we’re already at or below the limit, nothing to do
         guard activePlayers.count > maxInRAM else { return }
 
@@ -513,7 +524,7 @@ private func setupBufferingIndicator() {
         trimActivePlayers()
     }
     
-    private func trimActivePlayers(maxInRAM: Int = 4) {
+    private func trimActivePlayers(maxInRAM: Int = 5) {
         let protectedKey = currentURL.absoluteString
         var keys = activePlayers.keys.filter { $0 != protectedKey }
         
@@ -893,7 +904,9 @@ extension VideoPlayerUIView {
         _ = getCacheURL(for: url)
         print("Caching video...2")
         do {
-            try storage?.setObject(videoData, forKey: url.absoluteString)
+            try storage?.setObject(videoData, forKey: url.absoluteString,
+                                   expiry: .seconds(60 * 30))      // optional – overrides default
+            
             if let cachedData = try? storage?.object(forKey: url.absoluteString),
                 cachedData == videoData
             {
@@ -964,11 +977,27 @@ extension VideoPlayerUIView {
  
 
     private func getCacheURL(for url: URL) -> URL {
-        // Define the cache directory and the file name based on the URL's absolute string
-        let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-            .first!
-        let cacheURL = cacheDirectory.appendingPathComponent(url.lastPathComponent)
+        let cacheDir = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask).first!
 
-        return cacheURL
+        // --- build a unique, filesystem‑safe name ---
+        let raw = url.absoluteString
+        let name: String
+
+        if #available(iOS 13.0, *) {
+            // CryptoKit SHA‑256
+            let digest = SHA256.hash(data: Data(raw.utf8))
+            name = digest.map { String(format: "%02x", $0) }.joined()
+        } else {
+            // Fallback: Base64‑url encoded string of the full URL
+            name = Data(raw.utf8)
+                .base64EncodedString()
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "+", with: "-")
+        }
+
+        let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
+        return cacheDir.appendingPathComponent("\(name).\(ext)")
     }
+
 }
