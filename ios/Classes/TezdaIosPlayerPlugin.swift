@@ -53,7 +53,7 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
     }
     
     @objc private func handleVideoDurationUpdate(_ notification: Notification) {
-        if let eventData = notification.object as? [String: Any] {
+        if let eventData = notification.userInfo as? [String: Any] {
             self.sendEventToFlutter(event: eventData )
         }
     }
@@ -76,7 +76,6 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         DispatchQueue.main.async { [weak self] in
             guard let channel = self?.eventSink else { return }
             do {
-                let data = try JSONSerialization.data(withJSONObject: ["event": "\(event)"])
                 channel(["event": "\(event)"])
             } catch {
                 print("Failed to send event: \(error)")

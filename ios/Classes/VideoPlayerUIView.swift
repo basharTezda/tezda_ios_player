@@ -3,8 +3,9 @@ import Cache
 import Flutter
 import SystemConfiguration
 import UIKit
-var activeCachingOperations: [String:CachingPlayerItem ] = [:]
-var activePlayers: [String:AVPlayer ] = [:]
+private var activePlayers:   [String: AVPlayer]       = [:]   // LRU ≤ 4
+private var preloadPlayers:  [String: AVPlayer]       = [:]   // tmp only
+private var loadingItems:    [String: CachingPlayerItem] = [:]
 func isConnectedToNetwork() -> Bool {
     let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
     var flags = SCNetworkReachabilityFlags()
@@ -33,6 +34,7 @@ class VideoPlayerUIView: UIView {
     private var playerLayer: AVPlayerLayer!
     private var timeObserverToken: Any?
     private var url: URL!
+    private(set) var currentURL: URL!
     private var nextVideoUrl: URL!
     private var nextVideoPlayerItems: [CachingPlayerItem] = []
     private var appStateObservers = [NSObjectProtocol]()
@@ -48,6 +50,8 @@ class VideoPlayerUIView: UIView {
     private var neverShowBufferingIndicator = false
     private var currentTime: Double = 0.0
     private var duration: Double = 0.0
+    private var playerItemContext = 0
+
 
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
@@ -63,51 +67,91 @@ class VideoPlayerUIView: UIView {
             print("Invalid URL")
         }
 
-      
-        let playerItem: AVPlayerItem
-        DispatchQueue.main.async {
-     self.bufferingIndicator.startAnimating()
+        // 1️⃣ re‑use if we already have a player for this URL
+        //  in init(frame:)
+        if let existing = activePlayers[videoURL.absoluteString] {
+            initPlayer(player: existing,        // ✅ overload uses player
+                       isMuted: isMuted,
+                       isLandScape: isLandScape)
         }
-          
-         // First check if we have a cached asset
-         if let cachedAsset = self.asset(for: videoURL) {
-             neverShowBufferingIndicator = true
-          
-             playerItem = AVPlayerItem(asset: cachedAsset)
-             initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-             activePlayers[self.url.absoluteString] = nil
-             activeCachingOperations[self.url.absoluteString] = nil
-         }
-         // Then check if we have an active caching operation for this URL
-         else if let activeItem = activeCachingOperations[videoURL.absoluteString] {
-             print("here")
-             // Use the existing caching item
-             neverShowBufferingIndicator = false
-//             playerItem = activeItem
-             activeItem.delegate = self
-             initPlayer(playerItem: activeItem, isMuted: isMuted, isLandScape: isLandScape, isActive: true)
-         }
-         // Otherwise create a new one
-         else {
-             if player == nil {
-                 let newPlayerItem = CachingPlayerItem(url: videoURL)
-                 newPlayerItem.delegate = self
-                 activeCachingOperations[videoURL.absoluteString] = newPlayerItem
-                 playerItem = newPlayerItem
-                 initPlayer(playerItem: playerItem, isMuted: isMuted, isLandScape: isLandScape)
-             }
-         }
-         
+        else if let pre = promotePreloaded(url: videoURL) {    // 🔥 <- NEW
+            initPlayer(player: pre,
+                       isMuted: isMuted,
+                       isLandScape: isLandScape)
+        }
+        else {
+            let item = asset(for: videoURL).map(AVPlayerItem.init) ??
+                       AVPlayerItem(url: videoURL)
+            initPlayer(playerItem: item,
+                       isMuted: isMuted,
+                       isLandScape: isLandScape)
+        }
+        // fire‐and‐forget background caching of this URL:
+        cacheInBackground(url: videoURL)
         
         setupAppStateObservers()
         setupAppSwitcherObservers()
         setupProgressSlider()
         setupBufferingIndicator()
         setupGestureRecognizers()
-        self.cacheVideoUrls(urls: self.preCachingList) { _ in }
-     
-
+        // now also pre‑cache any “next” videos:
+        self.cacheVideoUrls(urls: self.preCachingList) { _ in /* noop */ }
     }
+    
+    /// Moves a pre‑loaded dummy player (if any) from preload → active.
+    private func promotePreloaded(url: URL) -> AVPlayer? {
+        guard let p = preloadPlayers.removeValue(forKey: url.absoluteString)
+        else { return nil }
+
+        p.seek(to: .zero)                       // make sure we start at 0
+        loadingItems.removeValue(forKey: url.absoluteString)
+        activePlayers[url.absoluteString] = p
+        return p
+    }
+
+    /// Keep only currentURL + the 3 most‑recently‑prefetched URLs in memory.
+    private func purgeOffscreenPlayers(maxInRAM: Int = 4) {
+        // if we’re already at or below the limit, nothing to do
+        guard activePlayers.count > maxInRAM else { return }
+
+        // Make an LRU list: oldest keys first
+        let keysInLRUOrder = activePlayers.keys
+
+        for key in keysInLRUOrder where activePlayers.count > maxInRAM {
+            // Don’t purge what the user is currently watching
+            if key == currentURL.absoluteString { continue }
+
+            // Pause & drop from RAM; data is already in disk cache
+            activePlayers[key]?.pause()
+            activePlayers[key]?.replaceCurrentItem(with: nil)
+            activePlayers.removeValue(forKey: key)
+            loadingItems.removeValue(forKey: key)
+        }
+    }
+
+    /// Start a CachingPlayerItem download purely to fill disk cache, without ever attaching it to the on‑screen player.
+    private func cacheInBackground(url: URL) {
+        // if already cached or already downloading, do nothing
+        guard asset(for: url) == nil, loadingItems[url.absoluteString] == nil else { return }
+
+        let cacheItem = CachingPlayerItem(url: url)
+        cacheItem.delegate = self
+        loadingItems[url.absoluteString] = cacheItem
+
+        // create a “dummy” AVPlayer so loading begins
+        let dummy = AVPlayer(playerItem: cacheItem)
+        dummy.isMuted = true
+        dummy.automaticallyWaitsToMinimizeStalling = false
+
+        // kick off a tiny bit of buffering
+        dummy.rate = 0.1
+
+        // then pause after a couple seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            dummy.rate = 0
+        }
+    }
+
         private func cleanupPlayer() {
         // Remove time observer
         removePeriodicTimeObserver()
@@ -127,12 +171,12 @@ class VideoPlayerUIView: UIView {
         // Remove player layer
 //        playerLayer?.removeFromSuperlayer()
 //        playerLayer = nil
-//        
+//
 //        // Pause and nil the player
 //        player?.pause()
 //        player?.replaceCurrentItem(with: nil)
 //        player = nil
-//        
+//
 //        // Clean up next video items
 //        nextVideoPlayerItems.forEach { item in
 //            item.delegate = nil
@@ -174,7 +218,7 @@ private func setupBufferingIndicator() {
         // Make thumb visible and interactive
 //        progressSlider.setThumbImage(UIImage(systemName: "circle.fill"), for: .normal)
 //        progressSlider.setThumbImage(UIImage(systemName: "circle.fill"), for: .highlighted)
-//        
+//
         // Add targets
         progressSlider.addTarget(self, action: #selector(sliderValueChanged(_:)), for: .valueChanged)
         progressSlider.addTarget(self, action: #selector(sliderTouchDown(_:)), for: .touchDown)
@@ -242,7 +286,7 @@ private func setupBufferingIndicator() {
         guard let duration = player.currentItem?.duration.seconds,
               duration.isFinite, duration > 0 else { return }
         
-        let time = Double(value) * duration
+        _ = Double(value) * duration
 //        timeLabel.text = formatTime(time)
     }
 
@@ -250,7 +294,7 @@ private func setupBufferingIndicator() {
         guard let duration = player.currentItem?.duration.seconds,
               duration.isFinite, duration > 0 else { return }
         
-        let targetTime = Double(sender.value) * duration 
+        let targetTime = Double(sender.value) * duration
         let seekTime = CMTime(seconds: targetTime, preferredTimescale: 1000)
         
         player.seek(to: seekTime) { [weak self] _ in
@@ -292,7 +336,7 @@ private func setupBufferingIndicator() {
 
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
       
     }
 
@@ -309,7 +353,7 @@ private func setupBufferingIndicator() {
 
             ]
             NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         }
 
         // Observe app coming to foreground
@@ -323,7 +367,7 @@ private func setupBufferingIndicator() {
 
             ]
             NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
             if self?.isViewVisible() == true {
                 self?.play()
             }
@@ -370,113 +414,89 @@ private func setupBufferingIndicator() {
         return visibilityRatio >= 0.99
     }
     public func cacheVideoUrls(urls: [String], result: @escaping FlutterResult) {
+        var iterator = urls.makeIterator()
 
-      DispatchQueue.global(qos: .utility).async {
-    // Convert URLs array to an iterator so we can process them one by one
-    var urlIterator = urls.makeIterator()
-    
-    // Define a recursive function to process the next URL
-    func processNext() {
-        guard let urlString = urlIterator.next(),
-              let url = URL(string: urlString) else {
-            // All URLs processed, call completion on main thread
-            DispatchQueue.main.async {
-                result(true)
+        func cacheNext() {
+            guard let s = iterator.next(), let u = URL(string: s) else {
+                DispatchQueue.main.async { result(true) } // all done
+                return
             }
-            return
+            cacheNextVideoIfNeeded(url: u) { cacheNext() }
         }
-        
-        self.cacheNextVideoIfNeeded(url: url) {
-            // When one caching operation completes, process the next one
-            processNext()
-        }
+        cacheNext()
     }
-    
-    // Start processing the first URL
-    processNext()
-}
-    }
-    private func cacheNextVideoIfNeeded(url: URL, completion: @escaping () -> Void) {
-        // Check cache first
-        if self.asset(for: url) != nil {
-            completion()
-            return
-        }
+    private func cacheNextVideoIfNeeded(url: URL,
+                                        completion: @escaping () -> Void) {
 
-        // Only cache if we have network connection
-        guard isConnectedToNetwork() else {
-            completion()
-            return
-        }
-        // if activeCachingOperations[url] == true {
-        //     completion() // Already in progress
-        //     return
-        // }
-        
-        // Mark as being cached
-       
-        let nextVideoPlayerItem = CachingPlayerItem(url: url)
-        nextVideoPlayerItem.delegate = self
+        guard asset(for: url) == nil,
+              loadingItems[url.absoluteString] == nil else { completion(); return }
 
-        // We don't actually need to play it, just prepare it for caching
-        let tempPlayer = AVPlayer(playerItem: nextVideoPlayerItem)
-        tempPlayer.automaticallyWaitsToMinimizeStalling = false
-        tempPlayer.isMuted = true
+        let item   = CachingPlayerItem(url: url)
+        item.delegate = self
+        loadingItems[url.absoluteString] = item        // track it
 
-        // Set rate to 0.1 to start loading but not actually play
-        tempPlayer.rate = 0.1
-        activeCachingOperations[url.absoluteString] = nextVideoPlayerItem
-        activePlayers[url.absoluteString] = tempPlayer
-        nextVideoPlayerItems.append(nextVideoPlayerItem)
-        // After a short delay, pause it to prevent unnecessary bandwidth usage
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            tempPlayer.rate = 0
-        }
+        let dummy  = AVPlayer(playerItem: item)
+        dummy.isMuted = true
+        dummy.rate = 1.0                               // fetch quickly
+        preloadPlayers[url.absoluteString] = dummy     // <‑‑ lives here
+
+        // stop after 5 s of data
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { dummy.rate = 0 }
         completion()
     }
-    private func initPlayer(playerItem: AVPlayerItem, isMuted: Bool, isLandScape: Bool, isActive: Bool = false) {
+    private func initPlayer(player: AVPlayer,
+                            isMuted: Bool,
+                            isLandScape: Bool) {
+        self.player = player
+        finishInit(isMuted: isMuted, isLandScape: isLandScape)
+    }
 
-       if(isActive){
-           player = activePlayers[url.absoluteString]
-           player.seek(to: .zero)
-        }
-        if(!isActive){
-            player = AVPlayer(playerItem: playerItem)
-        }
+    private func initPlayer(playerItem: AVPlayerItem,
+                            isMuted: Bool,
+                            isLandScape: Bool) {
+        self.player = AVPlayer(playerItem: playerItem)
+        finishInit(isMuted: isMuted, isLandScape: isLandScape)
+    }
+    private func finishInit(isMuted: Bool, isLandScape: Bool) {
+        
+        
+        // register as “currently on screen”
         activePlayers[url.absoluteString] = player
         player.isMuted = isMuted
         player.automaticallyWaitsToMinimizeStalling = false
         playerLayer = AVPlayerLayer(player: player)
         playerLayer.frame = bounds
         player.play()
+        currentURL = url        // mark this URL as the one on‑screen
+        purgeOffscreenPlayers() // make sure we keep only 4 items in RAM
         playerLayer.videoGravity = isLandScape ? .resizeAspect : .resizeAspectFill
         layer.addSublayer(playerLayer)
         let eventData: [String: Any] = [
             "isPlaying": true
-
+            
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         if let item = player.currentItem {
-            item.addObserver(self, forKeyPath: "status", options: [.new], context: nil)
-            item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: nil)
+            item.addObserver(self, forKeyPath: "status", options: [.new], context: &playerItemContext)
+            item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: &playerItemContext)
         }
         player.currentItem?.addObserver(
-            self, forKeyPath: "playbackBufferEmpty", options: [.new], context: nil)
+            self, forKeyPath: "playbackBufferEmpty", options: [.new], context: &playerItemContext)
         player.currentItem?.addObserver(
-            self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: nil)
-//        player.currentItem?.addObserver(
-//            self, forKeyPath: "presentationSize", options: [.new], context: nil)
+            self, forKeyPath: "playbackLikelyToKeepUp", options: [.new], context: &playerItemContext)
+        //        player.currentItem?.addObserver(
+        //            self, forKeyPath: "presentationSize", options: [.new], context: nil)
         player.currentItem?.addObserver(
-            self, forKeyPath: "isPlaybackBufferFull", options: [.new], context: nil)
-     
+            self, forKeyPath: "isPlaybackBufferFull", options: [.new], context: &playerItemContext)
+        
         addPeriodicTimeObserver()
-
+        
         // Looping
         NotificationCenter.default.addObserver(
             self, selector: #selector(loopVideo),
             name: .AVPlayerItemDidPlayToEndTime, object: player.currentItem)
-
+        
         // Listen for toggle
         NotificationCenter.default.addObserver(
             self, selector: #selector(togglePlayPause),
@@ -490,6 +510,21 @@ private func setupBufferingIndicator() {
         NotificationCenter.default.addObserver(
             self, selector: #selector(toggleMute),
             name: NSNotification.Name("ToggleMute"), object: nil)
+        trimActivePlayers()
+    }
+    
+    private func trimActivePlayers(maxInRAM: Int = 4) {
+        let protectedKey = currentURL.absoluteString
+        var keys = activePlayers.keys.filter { $0 != protectedKey }
+        
+        while keys.count > maxInRAM - 1 {
+            if let victim = keys.first {
+                activePlayers[victim]?.pause()
+                activePlayers[victim]?.replaceCurrentItem(with: nil)
+                activePlayers.removeValue(forKey: victim)
+                keys.removeFirst()
+            }
+        }
     }
     private func addPeriodicTimeObserver() {
         removePeriodicTimeObserver()
@@ -536,7 +571,7 @@ private func setupBufferingIndicator() {
 //            name: Notification.Name("SeekToTimeNotification"), object: nil)
 //
 //        NotificationCenter.default.post(
-//            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
     }
     @objc private func loopVideo() {
         let eventData: [String: Any] = [
@@ -544,7 +579,7 @@ private func setupBufferingIndicator() {
             "duration": self.player.currentItem?.duration.seconds ?? 0,
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         player.seek(to: .zero)
         player.play()
     }
@@ -567,7 +602,7 @@ private func setupBufferingIndicator() {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
             }
         }
     }
@@ -580,7 +615,7 @@ private func setupBufferingIndicator() {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
             }
         }
     }
@@ -632,7 +667,7 @@ private func setupBufferingIndicator() {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
 
             }
         case "loadedTimeRanges":
@@ -648,7 +683,7 @@ private func setupBufferingIndicator() {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
 
             }
          case "playbackBufferEmpty":
@@ -659,7 +694,7 @@ private func setupBufferingIndicator() {
                  }
          
        
-         case "playbackLikelyToKeepUp":
+          case "playbackLikelyToKeepUp":
     
             DispatchQueue.main.async {
                
@@ -743,21 +778,37 @@ private func setupBufferingIndicator() {
         }
     }
     
-    deinit {
-//        print()
-        let eventData: [String: Any] = [
-            "onDeinit": true,
-            "duration": duration,
-            "currentTime": currentTime,
-            "video": url.absoluteString
-        ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
-        if let item = player.currentItem {
-            item.removeObserver(self, forKeyPath: "status")
+    func clearOldCachedVideos(maxCount: Int = 3) {
+        while activePlayers.count > maxCount {
+            if let key = activePlayers.keys.first {
+                activePlayers[key]?.pause()
+                activePlayers[key]?.replaceCurrentItem(with: nil)
+                activePlayers.removeValue(forKey: key)
+                loadingItems.removeValue(forKey: key)
+            }
         }
-        // removePeriodicTimeObserver()
-        cleanupPlayer()
+    }
+    
+    deinit {
+        if let item = player?.currentItem {
+    item.removeObserver(self, forKeyPath: "status", context: &playerItemContext)
+    item.removeObserver(self, forKeyPath: "loadedTimeRanges", context: &playerItemContext)
+    item.removeObserver(self, forKeyPath: "playbackBufferEmpty", context: &playerItemContext)
+    item.removeObserver(self, forKeyPath: "playbackLikelyToKeepUp", context: &playerItemContext)
+    item.removeObserver(self, forKeyPath: "isPlaybackBufferFull", context: &playerItemContext)
+}
+        //‑‑ pause & drop *this* player only
+            if let key = url?.absoluteString {
+                activePlayers[key]?.pause()
+                activePlayers[key]?.replaceCurrentItem(with: nil)
+                activePlayers.removeValue(forKey: key)
+                loadingItems .removeValue(forKey: key)
+                preloadPlayers.removeValue(forKey: key)
+            }
+        //‑‑ remove observers that belong to this instance
+        NotificationCenter.default.removeObserver(self)
+        removePeriodicTimeObserver()
+
         NotificationCenter.default.removeObserver(
             self, name: Notification.Name("SeekToTimeNotification"), object: nil)
 
@@ -766,31 +817,20 @@ private func setupBufferingIndicator() {
         }
 
     }
-
-
-}
+    }
 
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        let isPlayerItemInNextItems = nextVideoPlayerItems.contains { $0 == playerItem }
-        let urlToCache = isPlayerItemInNextItems ? playerItem.url : url
-        print("start saving")
-        self.cacheVideo(from: urlToCache!,videoData: data)
-        if(isPlayerItemInNextItems){
-            activePlayers[urlToCache!.absoluteString] = nil
-            activeCachingOperations[urlToCache!.absoluteString] = nil
-        }
-        let eventData: [String: Any] = [
-            "message": "Video downloaded successfully.",
-            "isNextVideo": isPlayerItemInNextItems,
-        ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"),
-            object: eventData)
-        print("\(eventData)")
-      
-
+        let isNext = nextVideoPlayerItems.contains { $0 == playerItem }
+        let urlToCache = isNext ? playerItem.url : url
+        cacheVideo(from: urlToCache!,videoData: data)
+        // free RAM we no longer need
+            if let p = preloadPlayers[urlToCache!.absoluteString] {
+                p.pause()
+                preloadPlayers.removeValue(forKey: urlToCache!.absoluteString)
+            }
+            loadingItems.removeValue(forKey: urlToCache!.absoluteString)
     }
     func playerItem(
         _ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int,
@@ -814,11 +854,11 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
         
         NotificationCenter.default.post(
             name: Notification.Name("VideoDurationUpdate"),
-            object: eventData
+            object:  nil, userInfo: eventData
         )
         
         // Optionally, you can automatically resume playback when ready
-        playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.isPlaybackBufferFull), options: [.new], context: nil)
+        playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.isPlaybackBufferFull), options: [.new], context: &playerItemContext)
     }
 
     func playerItem(_ playerItem: CachingPlayerItem, downloadingFailedWith error: Error) {
@@ -827,7 +867,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         print("\(eventData)")
 
     }
@@ -844,13 +884,13 @@ extension VideoPlayerUIView {
 //
 //            ]
 //            NotificationCenter.default.post(
-//                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+//                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
 //            return
 //        }
 
         // Save the video data to disk cache
         print("Caching video...1")
-        let cacheURL = getCacheURL(for: url)
+        _ = getCacheURL(for: url)
         print("Caching video...2")
         do {
             try storage?.setObject(videoData, forKey: url.absoluteString)
@@ -863,14 +903,14 @@ extension VideoPlayerUIView {
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
             } else {
                 let eventData: [String: Any] = [
                     "message": "Failed to cache video data."
 
                 ]
                 NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
             }
 
         } catch {
@@ -880,7 +920,7 @@ extension VideoPlayerUIView {
 
             ]
             NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object: eventData)
+                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
 
         }
     }
@@ -894,7 +934,7 @@ extension VideoPlayerUIView {
 
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         return nil
     }
 
@@ -917,7 +957,7 @@ extension VideoPlayerUIView {
 
         ]
         NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object: eventData)
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
         return nil
     }
 
