@@ -7,7 +7,17 @@ private var activePlayers:   [String: AVPlayer]       = [:]   // LRU ≤ 4
 private var preloadPlayers:  [String: AVPlayer]       = [:]   // tmp only
 private var loadingItems:    [String: CachingPlayerItem] = [:]
 private var upcomingQueue = [URL]()
-private let maxPrefetch = 3
+private let maxPrefetch = 10 // ← up to 10 videos in your queue
+/// A serial queue for prefetching, one at a time:
+private let prefetchQueue: OperationQueue = {
+  let q = OperationQueue()
+  q.maxConcurrentOperationCount = 1
+  return q
+}()
+
+/// Never have more than 10 dummy players in RAM at once:
+private let maxConcurrentPrefetches = 10
+
 func isConnectedToNetwork() -> Bool {
     let reachability = SCNetworkReachabilityCreateWithName(nil, "www.apple.com")
     var flags = SCNetworkReachabilityFlags()
@@ -22,23 +32,31 @@ func isConnectedToNetwork() -> Bool {
     return isReachable && !needsConnection
 }
 
-// expire on‑disk files after 1 hour, and cap total at 500 MB
-let diskConfig = DiskConfig(
-  name: "VideoCache",
+// MARK: – Dual Disk Caches
+
+// 1️⃣ permanent bucket: never expires, 2GB storage size
+let permDiskConfig = DiskConfig(
+  name: "VideoCachePerm",
+  expiry: .never,
+  maxSize: UInt(2048 * 1024 * 1024)
+)
+let permStorage = try? Storage<String, Data>(
+  diskConfig: permDiskConfig,
+  memoryConfig: MemoryConfig(),
+  transformer: TransformerFactory.forData()
+)
+
+// 2️⃣ temporary bucket: 1 hr TTL, 500 MB cap
+let tempDiskConfig = DiskConfig(
+  name: "VideoCacheTemp",
   expiry: .seconds(3600),
   maxSize: UInt(500 * 1024 * 1024)
 )
-
-// expire in‑RAM entries (if you ever used them) after 30 min:
-let memoryConfig = MemoryConfig(
-  expiry: .seconds(1800),
-  countLimit: 10,
-  totalCostLimit: 10
+let tempStorage = try? Storage<String, Data>(
+  diskConfig: tempDiskConfig,
+  memoryConfig: MemoryConfig(),
+  transformer: TransformerFactory.forData()
 )
-
-let storage = try? Storage<String, Data>(
-    diskConfig: diskConfig, memoryConfig: memoryConfig, transformer: TransformerFactory.forData())
-
 /// Track when each URL’s prefetch began, so we can evict if it hangs >30 min.
 private var prefetchStartDates: [String: Date] = [:]
 
@@ -68,10 +86,28 @@ class VideoPlayerUIView: UIView {
     private var currentTime: Double = 0.0
     private var duration: Double = 0.0
     private var playerItemContext = 0
+    /// Move an unwatched clip from permStorage → tempStorage (starts its TTL)
+    private func markWatched(_ url: URL) {
+        let key = url.absoluteString
+        // 1️⃣ pull bytes from permanent store
+        guard let data = try? permStorage?.object(forKey: key) else { return }
+
+        // 2️⃣ write into the TTL‐backed temp store
+        try? tempStorage?.setObject(data, forKey: key)
+        print("[Cache_Demonstration] Marked watched → moved to TTL bucket: \(key) (expires in 1h, cap 500 MB)")
+
+        // 3️⃣ remove from permanent so it never lingers forever
+        try? permStorage?.removeObject(forKey: key)
+    }
+    // at top of VideoPlayerUIView, with your other private vars
+    private var hasSentDeinitEvent = false
 
 
 
     init(frame: CGRect, videoURL: URL, isMuted: Bool, isLandScape: Bool, nextVideos: [String]) {
+        
+        print("[Cache_Demonstration]: caching \(nextVideos.count) videos...")
+
         url = videoURL
         preCachingList = nextVideos
         super.init(frame: frame)
@@ -119,29 +155,24 @@ class VideoPlayerUIView: UIView {
         }
     /// Returns an AVPlayerItem by checking disk → RAM → network
     private func makePlayerItem(for url: URL) -> AVPlayerItem {
-      let key = url.absoluteString
+        let key = url.absoluteString
 
-      // 1️⃣ Disk-backed play (preferred)
-      if let asset = localAsset(for: url) {
-        return AVPlayerItem(asset: asset)
-      }
-      
-      // 2️⃣ Promote the in‑flight CachingPlayerItem
-      if let cacheItem = loadingItems[key] {
-        // stop & detach the dummy AVPlayer
-        if let dummy = preloadPlayers[key] {
-          dummy.pause()
-          dummy.replaceCurrentItem(with: nil)
-          preloadPlayers.removeValue(forKey: key)
+        // 1️⃣ watched? (TTL cache)
+        if let data = try? tempStorage?.object(forKey: key) {
+            let cacheURL = getCacheURL(for: url)
+            try? data.write(to: cacheURL)
+            return AVPlayerItem(asset: AVURLAsset(url: cacheURL))
         }
-        // remove from loadingItems so we don’t double‑promote
-        loadingItems.removeValue(forKey: key)
-        // now hand *that* CachingPlayerItem to your real player
-        return cacheItem
-      }
-      
-      // 3️⃣ Fallback to brand‑new network item
-      return AVPlayerItem(url: url)
+
+        // 2️⃣ unwatched but prefetched? (permanent cache)
+        if let data = try? permStorage?.object(forKey: key) {
+            let cacheURL = getCacheURL(for: url)
+            try? data.write(to: cacheURL)
+            return AVPlayerItem(asset: AVURLAsset(url: cacheURL))
+        }
+
+        // 3️⃣ fallback to network
+        return AVPlayerItem(url: url)
     }
 
     /// Keeps exactly `maxPrefetch` URLs in RAM, prefetching them.
@@ -158,36 +189,57 @@ class VideoPlayerUIView: UIView {
     /// Starts a background download & RAM‑cache of one video
     private func prefetch(url: URL) {
         let key = url.absoluteString
+
+        // 1️⃣ Already on disk or loading?
         guard loadingItems[key] == nil, asset(for: url) == nil else { return }
 
-        // 1️⃣ record start time
-        prefetchStartDates[key] = Date()
+        // 2️⃣ Too many in‑flight?
+        guard preloadPlayers.count < maxConcurrentPrefetches else {
+            print("[Cache_Demonstration] 🔥 at limit (\(preloadPlayers.count))/\(maxConcurrentPrefetches), skipping \(key)")
+            return
+        }
 
-        // 2️⃣ create the CachingPlayerItem + dummy AVPlayer
-        let cacheItem = CachingPlayerItem(url: url)
-        cacheItem.delegate = self
-        loadingItems[key] = cacheItem
-
-        let dummy = AVPlayer(playerItem: cacheItem)
-        dummy.isMuted = true
-        dummy.rate = 1.0
-        preloadPlayers[key] = dummy
-
-        // 3️⃣ after 30 min, if still not finished downloading, evict
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1800) { [weak self] in
+        // Schedule _serially_ on our queue:
+        let op = BlockOperation { [weak self] in
             guard let self = self else { return }
-            if let start = prefetchStartDates[key],
-               Date().timeIntervalSince(start) >= 1800,
-               loadingItems[key] != nil
-            {
-                // too old — drop from RAM
-                preloadPlayers[key]?.pause()
-                preloadPlayers.removeValue(forKey: key)
-                loadingItems.removeValue(forKey: key)
-                prefetchStartDates.removeValue(forKey: key)
+            print("[Cache_Demonstration] ▶️ start prefetch: \(key)")
+
+            // record start time in the global map
+            prefetchStartDates[key] = Date()
+
+            // set up a CachingPlayerItem and dummy AVPlayer
+            let cacheItem = CachingPlayerItem(url: url)
+            cacheItem.delegate = self
+            loadingItems[key] = cacheItem
+
+            let dummy = AVPlayer(playerItem: cacheItem)
+            dummy.isMuted = true
+            dummy.rate = 1.0
+            preloadPlayers[key] = dummy
+
+            // stop after a bit of data
+            Thread.sleep(forTimeInterval: 0.3)
+            dummy.rate = 0
+
+            // if it hasn’t completed in 30 min, evict
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1800) {
+                if let start = prefetchStartDates[key],
+                   Date().timeIntervalSince(start) >= 1800,
+                   loadingItems[key] != nil
+                {
+                    print("[Cache_Demonstration] ⏰ evict hung prefetch: \(key)")
+                    preloadPlayers[key]?.pause()
+                    preloadPlayers.removeValue(forKey: key)
+                    loadingItems.removeValue(forKey: key)
+                    prefetchStartDates.removeValue(forKey: key)
+                }
             }
         }
+
+        prefetchQueue.addOperation(op)
     }
+
+
 
     
     /// Moves a pre‑loaded dummy player (if any) from preload → active.
@@ -427,8 +479,7 @@ private func setupBufferingIndicator() {
             "onDoubleTap": true
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+        self.sendEvent(eventData: eventData)
       
     }
 
@@ -444,8 +495,7 @@ private func setupBufferingIndicator() {
                 "message": " app in background"
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+            self?.sendEvent(eventData: eventData)
         }
 
         // Observe app coming to foreground
@@ -458,8 +508,7 @@ private func setupBufferingIndicator() {
                 "message": " app in foreground"
 
             ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+            self?.sendEvent(eventData: eventData)
             if self?.isViewVisible() == true {
                 self?.play()
             }
@@ -507,7 +556,6 @@ private func setupBufferingIndicator() {
     }
     public func cacheVideoUrls(urls: [String], result: @escaping FlutterResult) {
         var iterator = urls.makeIterator()
-
         func cacheNext() {
             guard let s = iterator.next(), let u = URL(string: s) else {
                 DispatchQueue.main.async { result(true) } // all done
@@ -550,7 +598,7 @@ private func setupBufferingIndicator() {
         finishInit(isMuted: isMuted, isLandScape: isLandScape)
     }
     private func finishInit(isMuted: Bool, isLandScape: Bool) {
-        
+        markWatched(self.url)
         
         // register as “currently on screen”
         activePlayers[url.absoluteString] = player
@@ -567,8 +615,7 @@ private func setupBufferingIndicator() {
             "isPlaying": true
             
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+        self.sendEvent(eventData: eventData)
         if let item = player.currentItem {
             item.addObserver(self, forKeyPath: "status", options: [.new], context: &playerItemContext)
             item.addObserver(self, forKeyPath: "loadedTimeRanges", options: .new, context: &playerItemContext)
@@ -670,12 +717,14 @@ private func setupBufferingIndicator() {
             "onFinished": true,
             "duration": self.player.currentItem?.duration.seconds ?? 0,
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+        sendEvent(eventData: eventData)
         player.seek(to: .zero)
         player.play()
     }
-
+@objc private func sendEvent(eventData: [String: Any]  ){
+    NotificationCenter.default.post(
+            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+}
     @objc private func togglePlayPause() {
         DispatchQueue.main.async {
             if self.player.timeControlStatus == .playing {
@@ -693,8 +742,7 @@ private func setupBufferingIndicator() {
                     "isPlaying": true
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+                self.sendEvent(eventData: eventData)
             }
         }
     }
@@ -706,17 +754,24 @@ private func setupBufferingIndicator() {
                     "isPlaying": false
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+                self.sendEvent(eventData: eventData)
             }
         }
     }
     @objc private func toggleMute() {
         player.isMuted = !player.isMuted
     }
-
+@objc private func sendOnDeinit() {
+    let eventData: [String: Any] = [
+"onDeinit": true,
+"duration": self.player.currentItem?.duration.seconds ?? 0,
+"currentTime": self.currentTime,
+"video": self.url.absoluteString,
+]
+//print("\(eventData)")
+sendEvent(eventData: eventData)
+    }
     override func layoutSubviews() {
-
         super.layoutSubviews()
         playerLayer.frame = bounds
         bringSubviewToFront(progressSlider)
@@ -733,16 +788,24 @@ private func setupBufferingIndicator() {
     }
     override func didMoveToWindow() {
         super.didMoveToWindow()
+
+        // if we're being removed from the window, send deinit exactly once
+        if window == nil && !hasSentDeinitEvent {
+            hasSentDeinitEvent = true
+            sendOnDeinit()
+        }
+
+        // then your normal play/pause logic
         if isInAppSwitcher {
             pause()
+        } else if isViewVisible() {
+            play()
         } else {
-            if isViewVisible() {
-                play()
-            } else {
-                pause()
-            }
+            pause()
         }
     }
+
+    
     override func observeValue(
         forKeyPath keyPath: String?, of object: Any?,
         change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?
@@ -758,8 +821,7 @@ private func setupBufferingIndicator() {
                     "started": true
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+              sendEvent(eventData: eventData)
 
             }
         case "loadedTimeRanges":
@@ -774,8 +836,7 @@ private func setupBufferingIndicator() {
                     "buffering": bufferedTime
 
                 ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+              sendEvent(eventData: eventData)
 
             }
          case "playbackBufferEmpty":
@@ -882,6 +943,7 @@ private func setupBufferingIndicator() {
     }
     
     deinit {
+        
         if let item = player?.currentItem {
     item.removeObserver(self, forKeyPath: "status", context: &playerItemContext)
     item.removeObserver(self, forKeyPath: "loadedTimeRanges", context: &playerItemContext)
@@ -914,31 +976,25 @@ private func setupBufferingIndicator() {
 extension VideoPlayerUIView: CachingPlayerItemDelegate {
 
     func playerItem(_ playerItem: CachingPlayerItem, didFinishDownloadingData data: Data) {
-        let url = playerItem.url
-        let key = url.absoluteString
+      let key = playerItem.url.absoluteString
 
-        // 1️⃣ Persist to disk (with 1 hr TTL & ≤500 MB cap)
-        cacheVideo(from: url, videoData: data)
+      // 1️⃣ persist into permStorage immediately:
+      try? permStorage?.setObject(data, forKey: key)
+      print("[Cache_Demonstration] ✅ persisted \(key) (\(data.count) bytes) → permanent")
 
-        // 2️⃣ Immediately evict from RAM (unless it’s the one playing now)
-        if url != currentURL {
-            preloadPlayers[key]?.pause()
-            preloadPlayers.removeValue(forKey: key)
-            loadingItems.removeValue(forKey: key)
-        }
-
-        // 3️⃣ clean up our start‑time tracking
-        prefetchStartDates.removeValue(forKey: key)
+      // 2️⃣ clean up RAM
+      if key != currentURL.absoluteString {
+        preloadPlayers[key]?.pause()
+        preloadPlayers.removeValue(forKey: key)
+        loadingItems.removeValue(forKey: key)
+      }
+      prefetchStartDates.removeValue(forKey: key)
     }
 
     func playerItem(
         _ playerItem: CachingPlayerItem, didDownloadBytesSoFar bytesDownloaded: Int,
         outOf bytesExpected: Int
     ) {
-        let downloadedMB = Double(bytesDownloaded) / (1024 * 1024)
-        let expectedMB = Double(bytesExpected) / (1024 * 1024)
-        
-        print(String(format: "Downloaded: %.2f MB of %.2f MB", downloadedMB, expectedMB))
         
     }
 
@@ -951,10 +1007,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             "isBuffering": true
         ]
         
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"),
-            object:  nil, userInfo: eventData
-        )
+        self.sendEvent(eventData: eventData)
         
         // Optionally, you can automatically resume playback when ready
         playerItem.addObserver(self, forKeyPath: #keyPath(AVPlayerItem.isPlaybackBufferFull), options: [.new], context: &playerItemContext)
@@ -965,8 +1018,7 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
             "error": error
 
         ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
+        self.sendEvent(eventData: eventData)
         print("\(eventData)")
 
     }
@@ -974,97 +1026,71 @@ extension VideoPlayerUIView: CachingPlayerItemDelegate {
 }
 extension VideoPlayerUIView {
 
-    func cacheVideo(from url: URL, videoData: Data) {
-        // Attempt to load the video data
-//        print("Caching video...0")
-//        guard let videoData = try? Data(contentsOf: url) else {
-//            let eventData: [String: Any] = [
-//                "message": "Failed to load video data from URL."
-//
-//            ]
-//            NotificationCenter.default.post(
-//                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-//            return
-//        }
-
-        // Save the video data to disk cache
-        print("Caching video...1")
-        _ = getCacheURL(for: url)
-        print("Caching video...2")
-        do {
-            try storage?.setObject(videoData, forKey: url.absoluteString)
-            if let cachedData = try? storage?.object(forKey: url.absoluteString),
-                cachedData == videoData
-            {
-                print("Caching video...3")
-                let eventData: [String: Any] = [
-                    "message": "Video cached successfully."
-
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-            } else {
-                let eventData: [String: Any] = [
-                    "message": "Failed to cache video data."
-
-                ]
-                NotificationCenter.default.post(
-                    name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-            }
-
-        } catch {
-
-            let eventData: [String: Any] = [
-                "message": "Error caching video: \(error)"
-
-            ]
-            NotificationCenter.default.post(
-                name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-
-        }
-    }
-
+    /// Attempt to read from TTL‐backed first, then permanent
     func getVideo(from url: URL) -> Data? {
-        if let cachedData = try? storage?.object(forKey: url.absoluteString) {
-            return cachedData
-        }
-        let eventData: [String: Any] = [
-            "message": "no cached data found for this \(url.absoluteString)."
+      let key = url.absoluteString
 
-        ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-        return nil
+      // 1️⃣ TTL cache (only “watched” videos)
+      if let data = try? tempStorage?.object(forKey: key) {
+        return data
+      }
+
+      // 2️⃣ permanent cache (“unwatched” prefetched videos)
+      if let data = try? permStorage?.object(forKey: key) {
+        return data
+      }
+
+      return nil
     }
 
+
+    /// Remove a specific URL from both caches
     func removeVideo(from url: URL) {
-        try? storage?.removeObject(forKey: url.absoluteString)
+      let key = url.absoluteString
+      try? tempStorage?.removeObject(forKey: key)
+      try? permStorage?.removeObject(forKey: key)
     }
 
+    /// Wipe *all* cached videos
     func clearCache() {
-        try? storage?.removeAll()
+      try? tempStorage?.removeAll()
+      try? permStorage?.removeAll()
     }
 
+    /// Load an AVAsset from whichever cache has it, writing bytes to disk.
     func asset(for url: URL) -> AVAsset? {
-        if let data = getVideo(from: url) {
-            let cacheURL = getCacheURL(for: url)
-            try? data.write(to: cacheURL)
-            return AVURLAsset(url: cacheURL)
-        }
-        let eventData: [String: Any] = [
-            "message": "no cached file found for this \(url.absoluteString)."
+      let key = url.absoluteString
+      let cacheURL = getCacheURL(for: url)
 
-        ]
-        NotificationCenter.default.post(
-            name: Notification.Name("VideoDurationUpdate"), object:  nil, userInfo: eventData)
-        return nil
-    }
-    /// If we’ve already cached to disk, write bytes out and return an AVURLAsset
-    private func localAsset(for url: URL) -> AVURLAsset? {
-        guard let data = try? storage?.object(forKey: url.absoluteString) else { return nil }
-        let cacheURL = getCacheURL(for: url)
+      // try TTL‐backed data first
+      if let data = try? tempStorage?.object(forKey: key) {
         try? data.write(to: cacheURL)
         return AVURLAsset(url: cacheURL)
+      }
+
+      // then permanent
+      if let data = try? permStorage?.object(forKey: key) {
+        try? data.write(to: cacheURL)
+        return AVURLAsset(url: cacheURL)
+      }
+
+      return nil
+    }
+
+    /// “Local asset” means reading directly from *either* cache without triggering network
+    private func localAsset(for url: URL) -> AVURLAsset? {
+      let key = url.absoluteString
+      let cacheURL = getCacheURL(for: url)
+
+      if let data = try? tempStorage?.object(forKey: key) {
+        try? data.write(to: cacheURL)
+        return AVURLAsset(url: cacheURL)
+      }
+      if let data = try? permStorage?.object(forKey: key) {
+        try? data.write(to: cacheURL)
+        return AVURLAsset(url: cacheURL)
+      }
+      return nil
     }
  
 

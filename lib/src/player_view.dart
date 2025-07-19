@@ -6,7 +6,24 @@ import 'package:flutter/services.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import '../tezda_ios_player.dart';
 
-List<String> cached = [];
+/// Track which URLs have already been requested for prebuffering.
+final Set<String> _prebufferedUrls = {};
+
+/// Returns up to 10 URLs you haven’t yet prebuffered.
+List<String> takeUpToTen({
+  required String currentUrl,
+  required List<String> allUrls,
+}) {
+  // mark the one you’re about to play as “used”
+  _prebufferedUrls.add(currentUrl);
+
+  // filter out any you’ve already requested
+  final remaining = allUrls.where((u) => !_prebufferedUrls.contains(u));
+
+  // return at most 10
+  return remaining.take(10).toList();
+}
+
 
 class NativeVideoWidget extends StatefulWidget {
   final String url;
@@ -95,9 +112,9 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
                         'url': widget.url,
                         'shouldMute': widget.shouldMute,
                         'isLandscape': widget.isLandscape,
-                        "preLoadUrls": takeOnlyFive(
-                            removedItem: widget.url,
-                            list: widget.preloadUrl ?? []),
+                        "preLoadUrls": takeUpToTen(
+                            currentUrl: widget.url,
+                            allUrls: widget.preloadUrl ?? [],),
                       },
                       creationParamsCodec: const StandardMessageCodec(),
                     ),
@@ -114,14 +131,4 @@ class _NativeVideoWidgetState extends State<NativeVideoWidget> {
           ],
         );
       });
-}
-
-List<String> takeOnlyFive(
-    {required String removedItem, required List<String> list}) {
-  cached.add(removedItem);
-  final fixedList = list.toList();
-  fixedList.removeWhere((item) => cached.contains(item));
-  List<String> firstFive =
-      fixedList.length > 5 ? fixedList.sublist(0, 5) : fixedList;
-  return firstFive;
 }

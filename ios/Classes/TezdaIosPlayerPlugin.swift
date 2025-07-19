@@ -63,9 +63,9 @@ public class TezdaIosPlayerPlugin: NSObject, FlutterPlugin, FlutterStreamHandler
         return nil
     }
     private func handleCacheVideos(videos: [String]){
-        VideoPlayerUIView.shared.cacheVideoUrls(urls: [videos.first ?? ""]) { result in
-            print("Caching completed: \(result)")
-        }
+        // VideoPlayerUIView.shared.cacheVideoUrls(urls: [videos.first ?? ""]) { result in
+        //     print("Caching completed: \(result)")
+        // }
     }
 
     public func onCancel(withArguments arguments: Any?) -> FlutterError? {
