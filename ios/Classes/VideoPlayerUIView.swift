@@ -7,7 +7,7 @@ private var activePlayers:   [String: AVPlayer]       = [:]   // LRU ≤ 4
 private var preloadPlayers:  [String: AVPlayer]       = [:]   // tmp only
 private var loadingItems:    [String: CachingPlayerItem] = [:]
 private var upcomingQueue = [URL]()
-private let maxPrefetch = 10 // ← up to 10 videos in your queue
+private let maxPrefetch = 5 // ← up to 10 videos in your queue
 /// A serial queue for prefetching, one at a time:
 private let prefetchQueue: OperationQueue = {
   let q = OperationQueue()
